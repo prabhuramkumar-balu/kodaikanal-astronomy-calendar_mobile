@@ -3,3 +3,4 @@ astral
 ephem
 pytz
 pandas
+streamlit-javascript
