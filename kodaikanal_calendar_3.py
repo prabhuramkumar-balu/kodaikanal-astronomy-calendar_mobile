@@ -4,8 +4,10 @@ from calendar import monthcalendar, setfirstweekday, MONDAY
 from astral.sun import sun
 from astral.location import LocationInfo
 import pytz
-import ephem  # pip install ephem
+import ephem
+import pandas as pd
 
+# Set Monday as the first day of the week
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -13,9 +15,9 @@ IST = pytz.timezone("Asia/Kolkata")
 latitude = 10 + 13/60 + 50/3600
 longitude = 77 + 28/60 + 7/3600
 timezone = "Asia/Kolkata"
-
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
+# Streamlit page setup
 st.set_page_config(
     page_title="Kodaikanal Astronomy Calendar",
     layout="centered",
@@ -25,6 +27,7 @@ st.set_page_config(
 st.title("📅 Kodaikanal Astronomy Calendar")
 st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, and Planetary Rise/Set Times (IST, 12-hour format)")
 
+# Inputs
 year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year)
 months = [
     "January", "February", "March", "April", "May", "June",
@@ -33,18 +36,10 @@ months = [
 month_name = st.selectbox("Select Month", months)
 month_index = months.index(month_name) + 1
 calendar = monthcalendar(year, month_index)
-
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Detect mobile by user agent for simple toggle
-def is_mobile():
-    ua = st.request.headers.get('user-agent', '').lower()
-    mobile_strings = ['iphone', 'android', 'ipad', 'mobile']
-    return any(m in ua for m in mobile_strings)
-
-# Fallback checkbox if detection fails
-default_mobile = is_mobile()
-use_list_view = st.checkbox("📱 Use mobile-friendly list view instead of calendar grid", value=default_mobile)
+# Layout toggle
+use_list_view = st.checkbox("📱 Use mobile-friendly list view instead of calendar grid")
 
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
@@ -65,7 +60,6 @@ def get_rise_set(observer, body):
     return rise.datetime() if rise else "N/A", set_.datetime() if set_ else "N/A"
 
 def describe_moon_phase(illum):
-    # Simple phase description by illumination percentage
     if illum < 1:
         return "New Moon"
     elif illum < 50:
@@ -85,6 +79,7 @@ def describe_moon_phase(illum):
 
 selected_day = None
 
+# Day selection UI
 if use_list_view:
     st.write("### Select Day")
     for week in calendar:
@@ -112,15 +107,18 @@ else:
                 if cols[i].button(label, key=f"{year}-{month_index}-{day}"):
                     selected_day = date(year, month_index, day)
 
+# Show data
 if selected_day:
     try:
         dt_local = datetime(selected_day.year, selected_day.month, selected_day.day, 12, 0, 0)
         dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
 
+        # Sun times
         sun_times = sun(astral_city.observer, date=dt_local, tzinfo=pytz.timezone(timezone))
         sunrise_ist = sun_times['sunrise'].strftime('%I:%M %p')
         sunset_ist = sun_times['sunset'].strftime('%I:%M %p')
 
+        # Moon info
         observer = ephem.Observer()
         observer.lat = str(latitude)
         observer.lon = str(longitude)
@@ -130,11 +128,11 @@ if selected_day:
         moon = ephem.Moon(observer)
         moon_phase = moon.phase
         moon_phase_desc = describe_moon_phase(moon_phase)
-
         moonrise_utc, moonset_utc = get_rise_set(observer, moon)
         moonrise_ist = to_ist_12h(moonrise_utc)
         moonset_ist = to_ist_12h(moonset_utc)
 
+        # Planets
         planets = {
             "Mercury": ephem.Mercury(),
             "Venus": ephem.Venus(),
@@ -160,7 +158,6 @@ if selected_day:
             st.write(f"**Moonrise:** {moonrise_ist} IST")
             st.write(f"**Moonset:** {moonset_ist} IST")
 
-        import pandas as pd
         planet_df = pd.DataFrame.from_dict(
             planet_times,
             orient='index',
@@ -168,15 +165,6 @@ if selected_day:
         )
         with st.expander("🪐 Planet Rise/Set Times"):
             st.dataframe(planet_df, use_container_width=True)
-
-        # Replace experimental_rerun with simple page reload button
-        if st.button("🔄 Jump to Today"):
-            st.experimental_singleton.clear()
-            st.experimental_memo.clear()
-            st.experimental_rerun = None  # Not available, so fallback below
-            # Workaround: Use Streamlit's built-in rerun by refreshing the page (manual reload)
-            js = "window.location.reload();"
-            st.markdown(f'<script>{js}</script>', unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"Error retrieving data: {e}")
