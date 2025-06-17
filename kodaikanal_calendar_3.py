@@ -7,17 +7,17 @@ import pytz
 import ephem
 import pandas as pd
 
-# Set Monday as the first day of the week
+# Calendar setup
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
 # Location for Kodaikanal
-latitude = 10 + 13/60 + 50/3600
-longitude = 77 + 28/60 + 7/3600
+latitude = 10 + 13 / 60 + 50 / 3600
+longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
-# Streamlit page setup
+# UI setup
 st.set_page_config(
     page_title="Kodaikanal Astronomy Calendar",
     layout="centered",
@@ -35,12 +35,82 @@ months = [
 ]
 month_name = st.selectbox("Select Month", months)
 month_index = months.index(month_name) + 1
-calendar = monthcalendar(year, month_index)
+calendar_data = monthcalendar(year, month_index)
+
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Layout toggle
-use_list_view = st.checkbox("📱 Use mobile-friendly list view instead of calendar grid")
+# Toggle
+use_list_view = st.checkbox("📱 Use mobile-friendly list view", value=False)
 
+# Calendar rendering
+selected_day = None
+
+def render_calendar_html():
+    today = date.today()
+    html = """
+    <style>
+    .calendar { width: 100%; border-collapse: collapse; }
+    .calendar th, .calendar td {
+        border: 1px solid #ccc;
+        text-align: center;
+        padding: 0.6em;
+        font-size: 0.95em;
+    }
+    .calendar th {
+        background: #f0f0f0;
+    }
+    .today {
+        background-color: #a3d3a2;
+        font-weight: bold;
+    }
+    .calendar-btn {
+        width: 100%;
+        border: none;
+        background: none;
+        font-size: 1em;
+        padding: 0.4em;
+    }
+    </style>
+    <form method="GET">
+    <table class='calendar'>
+        <tr>""" + "".join(f"<th>{d}</th>" for d in days) + "</tr>"
+
+    for week in calendar_data:
+        html += "<tr>"
+        for day in week:
+            if day == 0:
+                html += "<td></td>"
+            else:
+                is_today = (year, month_index, day) == (today.year, today.month, today.day)
+                cell_class = "today" if is_today else ""
+                html += f"""<td class="{cell_class}">
+                    <button class="calendar-btn" name="selected_day" value="{day}">{day}</button>
+                </td>"""
+        html += "</tr>"
+    html += "</table></form>"
+    return html
+
+# List or grid UI
+if use_list_view:
+    st.write("### Select Day")
+    for week in calendar_data:
+        for day in week:
+            if day != 0:
+                label = f"{day}"
+                if date.today() == date(year, month_index, day):
+                    label = f"🟢 {day}"
+                if st.button(label, key=f"{year}-{month_index}-{day}"):
+                    selected_day = date(year, month_index, day)
+else:
+    st.markdown(render_calendar_html(), unsafe_allow_html=True)
+    selected_day_param = st.query_params.get("selected_day", None)
+    if selected_day_param:
+        try:
+            selected_day = date(year, month_index, int(selected_day_param))
+        except:
+            pass
+
+# Astronomy info
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
         return "N/A"
@@ -77,48 +147,16 @@ def describe_moon_phase(illum):
     else:
         return "Waning Crescent"
 
-selected_day = None
-
-# Day selection UI
-if use_list_view:
-    st.write("### Select Day")
-    for week in calendar:
-        for day in week:
-            if day != 0:
-                label = f"{day}"
-                if date.today() == date(year, month_index, day):
-                    label = f"🟢 {day}"
-                if st.button(label, key=f"{year}-{month_index}-{day}"):
-                    selected_day = date(year, month_index, day)
-else:
-    cols = st.columns(7)
-    for i, d in enumerate(days):
-        cols[i].markdown(f"**{d}**")
-
-    for week in calendar:
-        cols = st.columns(7)
-        for i, day in enumerate(week):
-            if day == 0:
-                cols[i].write(" ")
-            else:
-                label = f"{day}"
-                if date.today() == date(year, month_index, day):
-                    label = f"🟢 {day}"
-                if cols[i].button(label, key=f"{year}-{month_index}-{day}"):
-                    selected_day = date(year, month_index, day)
-
-# Show data
+# Data display
 if selected_day:
     try:
         dt_local = datetime(selected_day.year, selected_day.month, selected_day.day, 12, 0, 0)
         dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
 
-        # Sun times
         sun_times = sun(astral_city.observer, date=dt_local, tzinfo=pytz.timezone(timezone))
         sunrise_ist = sun_times['sunrise'].strftime('%I:%M %p')
         sunset_ist = sun_times['sunset'].strftime('%I:%M %p')
 
-        # Moon info
         observer = ephem.Observer()
         observer.lat = str(latitude)
         observer.lon = str(longitude)
@@ -132,7 +170,6 @@ if selected_day:
         moonrise_ist = to_ist_12h(moonrise_utc)
         moonset_ist = to_ist_12h(moonset_utc)
 
-        # Planets
         planets = {
             "Mercury": ephem.Mercury(),
             "Venus": ephem.Venus(),
