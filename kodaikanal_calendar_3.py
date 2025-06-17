@@ -1,4 +1,3 @@
-#mobile version#
 import streamlit as st
 from datetime import datetime, date
 from calendar import monthcalendar, setfirstweekday, MONDAY
@@ -7,32 +6,40 @@ from astral.location import LocationInfo
 import pytz
 import ephem
 import pandas as pd
+from streamlit_javascript import st_javascript
 
-# Setup
+# Constants
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
-
-# Kodaikanal location
 latitude = 10 + 13/60 + 50/3600
 longitude = 77 + 28/60 + 7/3600
 timezone = "Asia/Kolkata"
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
+# Streamlit page config
 st.set_page_config(
     page_title="Kodaikanal Astronomy Calendar",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
 
-# Device detection
-ua = st.experimental_user_agent()
-is_mobile = "Mobile" in ua or "Android" in ua or "iPhone" in ua
+st.title("📅 Kodaikanal Astronomy Calendar")
+st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, and Planetary Rise/Set Times (IST, 12-hour format)")
 
-# Style for mobile
+# 🧠 Detect Mobile Device
+def is_mobile_device():
+    ua = st_javascript("navigator.userAgent")
+    if ua:
+        return "Mobile" in ua or "Android" in ua or "iPhone" in ua
+    return False
+
+is_mobile = is_mobile_device()
+
+# 📱 Mobile style
 def apply_mobile_style():
     st.markdown("""
         <style>
-            html, body, [class*="css"]  {
+            html, body, [class*="css"] {
                 font-size: 16px;
             }
             .element-container {
@@ -47,11 +54,7 @@ def apply_mobile_style():
 if is_mobile:
     apply_mobile_style()
 
-# Title
-st.title("📅 Kodaikanal Astronomy Calendar")
-st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, and Planetary Rise/Set Times (IST, 12-hour format)")
-
-# Year and month selector
+# Date selectors
 year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year)
 months = [
     "January", "February", "March", "April", "May", "June",
@@ -62,7 +65,7 @@ month_index = months.index(month_name) + 1
 calendar = monthcalendar(year, month_index)
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# List view or grid
+# List view or calendar grid
 use_list_view = is_mobile or st.checkbox("📱 Use mobile-friendly list view instead of calendar grid")
 
 # Utility functions
@@ -104,7 +107,6 @@ def describe_moon_phase(illum):
 
 # Day selection
 selected_day = None
-
 st.button("🔄 Jump to Today", on_click=lambda: st.experimental_rerun())
 
 if use_list_view:
@@ -118,7 +120,6 @@ if use_list_view:
                 if st.button(label, key=f"{year}-{month_index}-{day}"):
                     selected_day = date(year, month_index, day)
 else:
-    st.markdown('<div class="calendar-row">', unsafe_allow_html=True)
     cols = st.columns(7)
     for i, d in enumerate(days):
         cols[i].markdown(f"**{d}**")
@@ -134,9 +135,8 @@ else:
                     label = f"🟢 {day}"
                 if cols[i].button(label, key=f"{year}-{month_index}-{day}"):
                     selected_day = date(year, month_index, day)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-# Show selected day data
+# Show astronomy data
 if selected_day:
     try:
         dt_local = datetime(selected_day.year, selected_day.month, selected_day.day, 12, 0, 0)
