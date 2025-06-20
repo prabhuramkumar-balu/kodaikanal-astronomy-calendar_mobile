@@ -1,131 +1,88 @@
 import streamlit as st
-from datetime import datetime, date, time as dt_time, timedelta
+from datetime import datetime, date
 from calendar import monthcalendar, setfirstweekday, MONDAY
 import pytz
 from astral.sun import sun
 from astral.location import LocationInfo
 import ephem
-import threading
-import time as time_module
 import pandas as pd
 
-# Constants
 setfirstweekday(MONDAY)
-IST = pytz.timezone("Asia/Kolkata")
-latitude = 10 + 13/60 + 50/3600
-longitude = 77 + 28/60 + 7/3600
+
+# Location for Kodaikanal
+latitude = 10 + 13 / 60 + 50 / 3600
+longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
 location = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
+IST = pytz.timezone("Asia/Kolkata")
 
-# UI
+# Autorefresh to update clock every 1 second (1000 ms)
+count = st.experimental_get_query_params().get("refresh_count", [0])[0]
+count = int(count) if count else 0
+count += 1
+st.experimental_set_query_params(refresh_count=count)
+if count > 100000:  # reset after a while to prevent overflow
+    count = 0
+
+# --- LIVE IST CLOCK DISPLAY ---
+now_ist = datetime.now(IST)
+st.markdown(f"### Current IST Date: {now_ist.strftime('%d-%m-%Y')}")
+st.markdown(f"### Current IST Time: {now_ist.strftime('%I:%M:%S %p')}")
+st.experimental_rerun() if st.experimental_get_query_params().get("refresh_count")[0] != str(count) else None
+
+
+# Title
 st.title("📅 Kodaikanal Astronomy Calendar")
-st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, Planetary Rise/Set & Zenith Times (IST, 12-hour format)")
 
-# --- Live IST time (update every second) ---
-
-time_placeholder_date = st.empty()
-time_placeholder_time = st.empty()
-
-def live_ist_clock():
-    while True:
-        now_ist = datetime.now(IST)
-        time_placeholder_date.markdown(f"**Current IST Date:** {now_ist.strftime('%d-%m-%Y')}")
-        time_placeholder_time.markdown(f"**Current IST Time:** {now_ist.strftime('%I:%M:%S %p')}")
-        time_module.sleep(1)
-
-if "clock_thread_started" not in st.session_state:
-    threading.Thread(target=live_ist_clock, daemon=True).start()
-    st.session_state.clock_thread_started = True
-
-# --- Select Year and Month ---
-year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year, key="year_input")
+# Select Year and Month
+year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year, key="year")
 months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
-default_month_index = date.today().month - 1
-month_name = st.selectbox("Select Month", months, index=default_month_index)
-month_num = months.index(month_name) + 1
+month_idx = st.selectbox("Select Month", months, index=date.today().month - 1, key="month")
+month_num = months.index(month_idx) + 1
 
-# --- Calendar grid ---
+# Calendar for month/year
 cal = monthcalendar(year, month_num)
-days_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Get selected date from query params or default to today if in same month/year
-query_params = st.experimental_get_query_params()
-selected_date_str = query_params.get("selected_day", [None])[0]
-
-if selected_date_str:
-    try:
-        selected_date = datetime.strptime(selected_date_str, "%Y-%m-%d").date()
-    except:
-        selected_date = None
-else:
-    selected_date = None
-
-if not selected_date or selected_date.year != year or selected_date.month != month_num:
-    # Default selection to today if in current displayed month/year
-    if year == date.today().year and month_num == date.today().month:
-        selected_date = date.today()
+# Initialize selected_date in session state
+if "selected_date" not in st.session_state:
+    today = date.today()
+    if today.year == year and today.month == month_num:
+        st.session_state.selected_date = today
     else:
-        selected_date = date(year, month_num, 1)
+        st.session_state.selected_date = date(year, month_num, 1)
 
-# Display calendar grid with clickable days
+# Show calendar grid as buttons, update selected_date on click
 st.write("### Select Day")
 
 cols = st.columns(7)
-for day_name, col in zip(days_of_week, cols):
-    col.markdown(f"**{day_name}**")
+days_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+for idx, d in enumerate(days_of_week):
+    cols[idx].write(f"**{d}**")
 
 for week in cal:
     cols = st.columns(7)
-    for i, day in enumerate(week):
-        with cols[i]:
-            if day == 0:
-                st.write(" ")
-            else:
-                day_date = date(year, month_num, day)
-                style = ""
-                # Highlight selected day in green, today in red
-                if day_date == selected_date:
-                    style = "background-color:#a3d3a2; font-weight:bold; border-radius:5px;"
-                elif day_date == date.today():
-                    style = "background-color:#d46a6a; font-weight:bold; border-radius:5px;"
+    for idx, day in enumerate(week):
+        if day == 0:
+            cols[idx].write(" ")
+        else:
+            current_day = date(year, month_num, day)
+            button_label = str(day)
+            # Highlight selected day
+            if current_day == st.session_state.selected_date:
+                button_label = f"**🟢 {day}**"
+            elif current_day == date.today():
+                button_label = f"**🔴 {day}**"
 
-                # Create clickable link that updates the query params to selected day
-                link = f"?selected_day={day_date.isoformat()}&year={year}&month={month_num}"
-                st.markdown(
-                    f'<a href="{link}" style="display:block; padding:6px; {style} text-decoration:none; color:black;">{day}</a>',
-                    unsafe_allow_html=True,
-                )
+            if cols[idx].button(button_label, key=f"day_{year}_{month_num}_{day}"):
+                st.session_state.selected_date = current_day
 
-# --- Astronomy calculations for the selected date ---
-
-def to_ist_12h(dt_utc):
-    if dt_utc == "N/A" or dt_utc is None:
-        return "N/A"
-    dt_utc = pytz.utc.localize(dt_utc)
-    dt_ist = dt_utc.astimezone(IST)
-    return dt_ist.strftime("%I:%M %p")
-
-def get_rise_set_zenith(observer, body):
-    try:
-        rise = observer.next_rising(body)
-    except (ephem.AlwaysUpError, ephem.NeverUpError):
-        rise = None
-    try:
-        set_ = observer.next_setting(body)
-    except (ephem.AlwaysUpError, ephem.NeverUpError):
-        set_ = None
-    try:
-        zenith = observer.next_transit(body)
-    except (ephem.AlwaysUpError, ephem.NeverUpError):
-        zenith = None
-    return (
-        rise.datetime() if rise else "N/A",
-        set_.datetime() if set_ else "N/A",
-        zenith.datetime() if zenith else "N/A",
-    )
+# Astronomy calculations for selected date
+selected_date = st.session_state.selected_date
+st.markdown("---")
+st.header(f"Astronomy Data for {selected_date.strftime('%A, %d %B %Y')}")
 
 try:
     dt_local = datetime(selected_date.year, selected_date.month, selected_date.day, 12, 0, 0)
@@ -138,7 +95,6 @@ try:
     observer.lat = str(latitude)
     observer.lon = str(longitude)
     observer.elevation = 2133
-    # ephem dates are in UTC, so convert local noon to UTC
     observer.date = dt_local.astimezone(pytz.utc)
 
     moon = ephem.Moon(observer)
@@ -164,6 +120,32 @@ try:
 
     moon_phase_desc = describe_moon_phase(moon_phase)
 
+    def to_ist_12h(dt_utc):
+        if dt_utc is None:
+            return "N/A"
+        dt_utc = pytz.utc.localize(dt_utc)
+        dt_ist = dt_utc.astimezone(IST)
+        return dt_ist.strftime("%I:%M %p")
+
+    def get_rise_set_zenith(observer, body):
+        try:
+            rise = observer.next_rising(body)
+        except (ephem.AlwaysUpError, ephem.NeverUpError):
+            rise = None
+        try:
+            set_ = observer.next_setting(body)
+        except (ephem.AlwaysUpError, ephem.NeverUpError):
+            set_ = None
+        try:
+            zenith = observer.next_transit(body)
+        except (ephem.AlwaysUpError, ephem.NeverUpError):
+            zenith = None
+        return (
+            rise.datetime() if rise else None,
+            set_.datetime() if set_ else None,
+            zenith.datetime() if zenith else None,
+        )
+
     moonrise_utc, moonset_utc, moon_zenith_utc = get_rise_set_zenith(observer, moon)
     moonrise_ist = to_ist_12h(moonrise_utc)
     moonset_ist = to_ist_12h(moonset_utc)
@@ -186,19 +168,16 @@ try:
             to_ist_12h(zenith_dt),
         )
 
-    st.markdown("---")
-    st.header(f"Astronomy Data for {selected_date.strftime('%A, %d %B %Y')}")
-
     with st.expander("🌅 Sun Times"):
-        st.write(f"**Sunrise:** {sunrise_ist} IST")
-        st.write(f"**Sunset:** {sunset_ist} IST")
-        st.write(f"**Solar Noon (Zenith):** {solar_noon_ist} IST")
+        st.write(f"Sunrise: {sunrise_ist} IST")
+        st.write(f"Sunset: {sunset_ist} IST")
+        st.write(f"Solar Noon (Zenith): {solar_noon_ist} IST")
 
     with st.expander("🌕 Moon Phase and Moonrise/Moonset/Zenith"):
-        st.write(f"Illumination: **{moon_phase:.1f}%** ({moon_phase_desc})")
-        st.write(f"**Moonrise:** {moonrise_ist} IST")
-        st.write(f"**Moonset:** {moonset_ist} IST")
-        st.write(f"**Moon Zenith (Transit):** {moon_zenith_ist} IST")
+        st.write(f"Illumination: {moon_phase:.1f}% ({moon_phase_desc})")
+        st.write(f"Moonrise: {moonrise_ist} IST")
+        st.write(f"Moonset: {moonset_ist} IST")
+        st.write(f"Moon Zenith (Transit): {moon_zenith_ist} IST")
 
     planet_df = pd.DataFrame.from_dict(
         planet_times,
