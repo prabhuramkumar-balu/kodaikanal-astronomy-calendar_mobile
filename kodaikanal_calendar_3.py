@@ -7,17 +7,17 @@ import pytz
 import ephem
 import pandas as pd
 
-# Set calendar to start from Monday
+# Set calendar to start on Monday
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
-# Location setup for Kodaikanal
+# Kodaikanal location info
 latitude = 10 + 13 / 60 + 50 / 3600
 longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
-# Page setup
+# Page config
 st.set_page_config(
     page_title="Kodaikanal Astronomy Calendar",
     layout="centered",
@@ -27,37 +27,34 @@ st.set_page_config(
 st.title("📅 Kodaikanal Astronomy Calendar")
 st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, and Planetary Rise/Set Times (IST, 12-hour format)")
 
-# --- Inputs ---
+# -------------------- Year Selection --------------------
 year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year)
 
+# -------------------- Month Selection --------------------
 months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
 
-# Track selected month index safely
+# Safely initialize session state
 if "selected_month_index" not in st.session_state:
     st.session_state.selected_month_index = date.today().month - 1
 
-month_name = st.selectbox(
-    "Select Month",
-    months,
-    index=st.session_state.selected_month_index,
-    key="selected_month_index"
-)
+# Let Streamlit manage the selectbox state
+month_name = st.selectbox("Select Month", months, key="selected_month_index")
 
 month_index = months.index(month_name) + 1
 calendar_data = monthcalendar(year, month_index)
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Toggle for mobile list view
+# -------------------- List View Toggle --------------------
 use_list_view = st.checkbox("📱 Use mobile-friendly list view", value=False)
 
-# Track selected day
+# -------------------- Track Selected Day --------------------
 if "selected_day" not in st.session_state:
     st.session_state.selected_day = None
 
-# --- Helper Functions ---
+# -------------------- Helper Functions --------------------
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
         return "N/A"
@@ -94,7 +91,7 @@ def describe_moon_phase(illum):
     else:
         return "Waning Crescent"
 
-# --- Calendar UI ---
+# -------------------- Calendar UI --------------------
 today = date.today()
 st.markdown("### Select a Day")
 
@@ -120,7 +117,7 @@ else:
                 if cols[i].button(label, key=f"grid-{year}-{month_index}-{day}"):
                     st.session_state.selected_day = date(year, month_index, day)
 
-# --- Astronomy Data ---
+# -------------------- Astronomy Data --------------------
 selected_day = st.session_state.selected_day
 
 if selected_day:
