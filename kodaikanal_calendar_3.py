@@ -8,25 +8,16 @@ import ephem
 import pandas as pd
 import time
 
-# Refresh every second for live clock update
-if 'last_refresh' not in st.session_state:
-    st.session_state['last_refresh'] = time.time()
-
-if time.time() - st.session_state['last_refresh'] > 1:
-    st.session_state['last_refresh'] = time.time()
-    st.experimental_rerun()
-
-# Calendar setup
+# Setup calendar starting Monday
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
-# Location for Kodaikanal
 latitude = 10 + 13 / 60 + 50 / 3600
 longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
-# UI setup
+# Page config
 st.set_page_config(
     page_title="Kodaikanal Astronomy Calendar",
     layout="centered",
@@ -36,12 +27,23 @@ st.set_page_config(
 st.title("📅 Kodaikanal Astronomy Calendar")
 st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, Planetary Rise/Set & Zenith Times (IST, 12-hour format)")
 
-# Display current IST date and time, live updating
-now_ist = datetime.now(IST)
-st.write(f"**Current IST Date:** {now_ist.strftime('%d-%m-%Y')}")
-st.write(f"**Current IST Time:** {now_ist.strftime('%H:%M:%S')}")
+# Display live IST date and time without full rerun:
+time_container = st.empty()
 
-# Inputs
+def display_time():
+    now_ist = datetime.now(IST)
+    time_container.markdown(f"**Current IST Date:** {now_ist.strftime('%d-%m-%Y')}  \n**Current IST Time:** {now_ist.strftime('%H:%M:%S')}")
+
+display_time()
+
+if 'last_time_update' not in st.session_state:
+    st.session_state['last_time_update'] = time.time()
+
+if time.time() - st.session_state['last_time_update'] > 1:
+    st.session_state['last_time_update'] = time.time()
+    display_time()
+
+# Input widgets
 year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year)
 months = [
     "January", "February", "March", "April", "May", "June",
@@ -54,17 +56,31 @@ calendar_data = monthcalendar(year, month_index)
 
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Selected day state
-if 'selected_day' not in st.session_state:
-    # Default to today if in selected month and year, else first day of month
-    if year == date.today().year and month_index == date.today().month:
-        st.session_state.selected_day = date.today()
-    else:
-        # First valid day in month calendar
-        first_day = next((d for week in calendar_data for d in week if d != 0), 1)
-        st.session_state.selected_day = date(year, month_index, first_day)
+# Manage selected day with session state and query params
+query_params = st.query_params
+def parse_selected_day():
+    try:
+        y = int(query_params.get("year", [str(year)])[0])
+        m = int(query_params.get("month", [str(month_index)])[0])
+        d = int(query_params.get("selected_day", [str(date.today().day)])[0])
+        return date(y, m, d)
+    except Exception:
+        return date(year, month_index, 1)
 
-# Function to render calendar grid without buttons, highlight current and selected date
+if 'selected_day' not in st.session_state:
+    st.session_state.selected_day = parse_selected_day()
+else:
+    # if user changed month/year, reset selected_day accordingly:
+    if st.session_state.selected_day.year != year or st.session_state.selected_day.month != month_index:
+        if year == date.today().year and month_index == date.today().month:
+            st.session_state.selected_day = date.today()
+        else:
+            first_day = next((d for w in calendar_data for d in w if d != 0), 1)
+            st.session_state.selected_day = date(year, month_index, first_day)
+
+selected_day = st.session_state.selected_day
+
+# Generate calendar grid HTML with clickable dates (no buttons)
 def render_calendar_html():
     today = date.today()
     html = """
@@ -75,7 +91,6 @@ def render_calendar_html():
         text-align: center;
         padding: 0.6em;
         font-size: 0.95em;
-        cursor: pointer;
     }
     .calendar th {
         background: #f0f0f0;
@@ -87,6 +102,13 @@ def render_calendar_html():
     .today {
         background-color: #f28b82;
         font-weight: bold;
+    }
+    a {
+        text-decoration: none;
+        color: inherit;
+        display: block;
+        width: 100%;
+        height: 100%;
     }
     </style>
     <table class='calendar'>
@@ -100,33 +122,27 @@ def render_calendar_html():
             else:
                 cell_date = date(year, month_index, day)
                 classes = []
-                if cell_date == st.session_state.selected_day:
+                if cell_date == selected_day:
                     classes.append("selected")
                 if cell_date == today:
                     classes.append("today")
                 class_attr = " ".join(classes)
-                # Use a link with query param to select date
                 html += f"""<td class="{class_attr}">
-                    <a href="?selected_day={day}&year={year}&month={month_index}" style="text-decoration:none;color:inherit;">{day}</a>
+                    <a href="?selected_day={day}&year={year}&month={month_index}">{day}</a>
                 </td>"""
         html += "</tr>"
     html += "</table>"
     return html
 
-# Render calendar grid
 st.markdown(render_calendar_html(), unsafe_allow_html=True)
 
-# Read date selection from query params
-query_params = st.experimental_get_query_params()
-try:
-    q_year = int(query_params.get("year", [year])[0])
-    q_month = int(query_params.get("month", [month_index])[0])
-    q_day = int(query_params.get("selected_day", [st.session_state.selected_day.day])[0])
-    st.session_state.selected_day = date(q_year, q_month, q_day)
-except Exception:
-    pass
+# Update selected_day if query params changed (via click)
+new_selected_day = parse_selected_day()
+if new_selected_day != st.session_state.selected_day:
+    st.session_state.selected_day = new_selected_day
+    selected_day = new_selected_day
 
-# Astronomy info
+# Astronomy calculations and display
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
         return "N/A"
@@ -147,7 +163,6 @@ def get_rise_set(observer, body):
 
 def get_zenith(observer, body):
     try:
-        # Compute the time when body is at highest altitude (transit)
         transit = observer.next_transit(body)
     except (ephem.AlwaysUpError, ephem.NeverUpError):
         transit = None
@@ -171,10 +186,9 @@ def describe_moon_phase(illum):
     else:
         return "Waning Crescent"
 
-# Show astronomy data for selected day
-if st.session_state.selected_day:
+if selected_day:
     try:
-        dt_local = datetime(st.session_state.selected_day.year, st.session_state.selected_day.month, st.session_state.selected_day.day, 12, 0, 0)
+        dt_local = datetime(selected_day.year, selected_day.month, selected_day.day, 12, 0, 0)
         dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
 
         sun_times = sun(astral_city.observer, date=dt_local, tzinfo=pytz.timezone(timezone))
