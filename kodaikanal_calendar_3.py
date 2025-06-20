@@ -38,54 +38,37 @@ month_num = months.index(month_name) + 1
 cal = monthcalendar(year, month_num)
 
 today = now_ist.date()
-
-# --- Calendar Table with Day Selection ---
-
 weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Prepare calendar table data (strings with markdown for coloring)
-table_data = []
-
-for week in cal:
-    row = []
-    for day in week:
-        if day == 0:
-            row.append("")  # Empty cell
-        else:
-            dt = date(year, month_num, day)
-            if dt == today:
-                # Mark today in orange
-                row.append(f"🟠 {day}")
-            elif dt == st.session_state.selected_date:
-                # Mark selected day in blue
-                row.append(f"🔵 {day}")
-            else:
-                row.append(str(day))
-    table_data.append(row)
-
-# Convert to DataFrame for display with weekday labels as columns
-df = pd.DataFrame(table_data, columns=weekday_labels)
+# --- Calendar Grid with clickable buttons ---
 
 st.markdown("### 📅 Calendar")
 st.markdown("**Legend:** 🟠 Today  |  🔵 Selected Day")
 
-# Display calendar table as dataframe (no markdown, no tabulate dependency)
-st.dataframe(df, use_container_width=True, height=250)
+# Weekday headers
+cols = st.columns(7)
+for i, wd in enumerate(weekday_labels):
+    cols[i].markdown(f"**{wd}**")
 
-# Day selection dropdown
-days_in_month = [day for week in cal for day in week if day != 0]
-default_index = 0
-if (st.session_state.selected_date.year == year) and (st.session_state.selected_date.month == month_num):
-    try:
-        default_index = days_in_month.index(st.session_state.selected_date.day)
-    except ValueError:
-        default_index = 0
+# Calendar weeks
+for week in cal:
+    cols = st.columns(7)
+    for i, day in enumerate(week):
+        if day == 0:
+            cols[i].markdown(" ")
+        else:
+            dt = date(year, month_num, day)
+            # Highlight today and selected day with emojis
+            label = str(day)
+            if dt == today:
+                label = f"🟠 {day}"
+            if dt == st.session_state.selected_date:
+                label = f"🔵 {day}"
 
-selected_day = st.selectbox("Select a Day", days_in_month, index=default_index)
-st.session_state.selected_date = date(year, month_num, selected_day)
+            if cols[i].button(label, key=f"day-{year}-{month_num}-{day}"):
+                st.session_state.selected_date = dt
 
 # --- Astronomy Calculations ---
-
 sel = st.session_state.selected_date
 st.markdown("---")
 st.header(f"🌠 Astronomy Data for {sel.strftime('%A, %d %B %Y')}")
