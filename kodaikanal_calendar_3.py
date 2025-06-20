@@ -27,90 +27,35 @@ st.set_page_config(
 st.title("📅 Kodaikanal Astronomy Calendar")
 st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, and Planetary Rise/Set Times (IST, 12-hour format)")
 
-# Inputs
+# --- Inputs ---
 year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year)
+
 months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
-month_name = st.selectbox("Select Month", months)
+
+# Use session_state to persist selected month
+if "selected_month" not in st.session_state:
+    st.session_state.selected_month = date.today().month
+
+month_name = st.selectbox(
+    "Select Month",
+    months,
+    index=st.session_state.selected_month - 1,
+    key="selected_month"
+)
 month_index = months.index(month_name) + 1
 calendar_data = monthcalendar(year, month_index)
-
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Toggle
+# Toggle for mobile view
 use_list_view = st.checkbox("📱 Use mobile-friendly list view", value=False)
 
-# Calendar rendering
-selected_day = None
+# --- State for selected day ---
+if "selected_day" not in st.session_state:
+    st.session_state.selected_day = None
 
-def render_calendar_html():
-    today = date.today()
-    html = """
-    <style>
-    .calendar { width: 100%; border-collapse: collapse; }
-    .calendar th, .calendar td {
-        border: 1px solid #ccc;
-        text-align: center;
-        padding: 0.6em;
-        font-size: 0.95em;
-    }
-    .calendar th {
-        background: #f0f0f0;
-    }
-    .today {
-        background-color: #a3d3a2;
-        font-weight: bold;
-    }
-    .calendar-btn {
-        width: 100%;
-        border: none;
-        background: none;
-        font-size: 1em;
-        padding: 0.4em;
-    }
-    </style>
-    <form method="GET">
-    <table class='calendar'>
-        <tr>""" + "".join(f"<th>{d}</th>" for d in days) + "</tr>"
-
-    for week in calendar_data:
-        html += "<tr>"
-        for day in week:
-            if day == 0:
-                html += "<td></td>"
-            else:
-                is_today = (year, month_index, day) == (today.year, today.month, today.day)
-                cell_class = "today" if is_today else ""
-                html += f"""<td class="{cell_class}">
-                    <button class="calendar-btn" name="selected_day" value="{day}">{day}</button>
-                </td>"""
-        html += "</tr>"
-    html += "</table></form>"
-    return html
-
-# List or grid UI
-if use_list_view:
-    st.write("### Select Day")
-    for week in calendar_data:
-        for day in week:
-            if day != 0:
-                label = f"{day}"
-                if date.today() == date(year, month_index, day):
-                    label = f"🟢 {day}"
-                if st.button(label, key=f"{year}-{month_index}-{day}"):
-                    selected_day = date(year, month_index, day)
-else:
-    st.markdown(render_calendar_html(), unsafe_allow_html=True)
-    selected_day_param = st.query_params.get("selected_day", None)
-    if selected_day_param:
-        try:
-            selected_day = date(year, month_index, int(selected_day_param))
-        except:
-            pass
-
-# Astronomy info
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
         return "N/A"
@@ -134,7 +79,7 @@ def describe_moon_phase(illum):
         return "New Moon"
     elif illum < 50:
         return "Waxing Crescent"
-    elif illum == 50:
+    elif 49.5 <= illum <= 50.5:
         return "First Quarter"
     elif illum < 99:
         return "Waxing Gibbous"
@@ -142,12 +87,41 @@ def describe_moon_phase(illum):
         return "Full Moon"
     elif illum > 50:
         return "Waning Gibbous"
-    elif illum == 50:
+    elif 49.5 <= illum <= 50.5:
         return "Last Quarter"
     else:
         return "Waning Crescent"
 
-# Data display
+# --- Calendar Display ---
+today = date.today()
+st.markdown("### Select a Day")
+
+if use_list_view:
+    for week in calendar_data:
+        for day in week:
+            if day != 0:
+                label = f"🟢 {day}" if date.today() == date(year, month_index, day) else f"{day}"
+                if st.button(label, key=f"btn-{year}-{month_index}-{day}"):
+                    st.session_state.selected_day = date(year, month_index, day)
+else:
+    # Render as grid calendar
+    cols = st.columns(7)
+    for i, day_name in enumerate(days):
+        cols[i].markdown(f"**{day_name}**")
+
+    for week in calendar_data:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            if day == 0:
+                cols[i].markdown(" ")
+            else:
+                label = f"🟢 {day}" if today == date(year, month_index, day) else f"{day}"
+                if cols[i].button(label, key=f"grid-{year}-{month_index}-{day}"):
+                    st.session_state.selected_day = date(year, month_index, day)
+
+# --- Astronomy Data ---
+selected_day = st.session_state.selected_day
+
 if selected_day:
     try:
         dt_local = datetime(selected_day.year, selected_day.month, selected_day.day, 12, 0, 0)
@@ -202,6 +176,10 @@ if selected_day:
         )
         with st.expander("🪐 Planet Rise/Set Times"):
             st.dataframe(planet_df, use_container_width=True)
+
+        if st.button("🔙 Back to Calendar"):
+            st.session_state.selected_day = None
+            st.experimental_rerun()
 
     except Exception as e:
         st.error(f"Error retrieving data: {e}")
