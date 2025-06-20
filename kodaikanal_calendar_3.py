@@ -7,7 +7,7 @@ import pytz
 import ephem
 import pandas as pd
 
-# Set calendar to start on Monday
+# Set week start
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -27,28 +27,22 @@ st.set_page_config(
 st.title("📅 Kodaikanal Astronomy Calendar")
 st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, and Planetary Rise/Set Times (IST, 12-hour format)")
 
-# -------------------- Year Selection --------------------
+# -------------------- Year & Month Selection --------------------
 year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year)
 
-# -------------------- Month Selection --------------------
 months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
 
-# Safely initialize session state
 if "selected_month_index" not in st.session_state:
     st.session_state.selected_month_index = date.today().month - 1
 
-# Let Streamlit manage the selectbox state
 month_name = st.selectbox("Select Month", months, key="selected_month_index")
-
 month_index = months.index(month_name) + 1
+
 calendar_data = monthcalendar(year, month_index)
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-# -------------------- List View Toggle --------------------
-use_list_view = st.checkbox("📱 Use mobile-friendly list view", value=False)
 
 # -------------------- Track Selected Day --------------------
 if "selected_day" not in st.session_state:
@@ -91,31 +85,25 @@ def describe_moon_phase(illum):
     else:
         return "Waning Crescent"
 
-# -------------------- Calendar UI --------------------
+# -------------------- Calendar UI (Grid) --------------------
 today = date.today()
 st.markdown("### Select a Day")
 
-if use_list_view:
-    for week in calendar_data:
-        for day in week:
-            if day != 0:
-                label = f"🟢 {day}" if today == date(year, month_index, day) else str(day)
-                if st.button(label, key=f"list-{year}-{month_index}-{day}"):
-                    st.session_state.selected_day = date(year, month_index, day)
-else:
-    cols = st.columns(7)
-    for i, day_name in enumerate(days):
-        cols[i].markdown(f"**{day_name}**")
+# Header row
+cols = st.columns(7)
+for i, day_name in enumerate(days):
+    cols[i].markdown(f"**{day_name}**")
 
-    for week in calendar_data:
-        cols = st.columns(7)
-        for i, day in enumerate(week):
-            if day == 0:
-                cols[i].markdown(" ")
-            else:
-                label = f"🟢 {day}" if today == date(year, month_index, day) else str(day)
-                if cols[i].button(label, key=f"grid-{year}-{month_index}-{day}"):
-                    st.session_state.selected_day = date(year, month_index, day)
+# Calendar weeks
+for week in calendar_data:
+    cols = st.columns(7)
+    for i, day in enumerate(week):
+        if day == 0:
+            cols[i].markdown(" ")
+        else:
+            label = f"🟢 {day}" if today == date(year, month_index, day) else str(day)
+            if cols[i].button(label, key=f"grid-{year}-{month_index}-{day}"):
+                st.session_state.selected_day = date(year, month_index, day)
 
 # -------------------- Astronomy Data --------------------
 selected_day = st.session_state.selected_day
