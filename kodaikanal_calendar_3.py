@@ -35,7 +35,6 @@ months = [
     "July", "August", "September", "October", "November", "December"
 ]
 
-# Use 0-based month index for selectbox
 default_month_index = date.today().month - 1
 month_index = st.selectbox(
     "Select Month",
@@ -49,7 +48,6 @@ calendar_data = monthcalendar(year, month_index + 1)
 
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Toggle view
 use_list_view = st.checkbox("📱 Use mobile-friendly list view", value=False)
 
 selected_day = None
@@ -112,14 +110,13 @@ if use_list_view:
                     selected_day = date(year, month_index + 1, day)
 else:
     st.markdown(render_calendar_html(), unsafe_allow_html=True)
-    selected_day_param = st.experimental_get_query_params().get("selected_day", [None])[0]
+    selected_day_param = st.query_params.get("selected_day", [None])[0]
     if selected_day_param:
         try:
             selected_day = date(year, month_index + 1, int(selected_day_param))
         except:
             pass
 
-# Astronomy info helpers
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
         return "N/A"
@@ -156,7 +153,6 @@ def describe_moon_phase(illum):
     else:
         return "Waning Crescent"
 
-# Display astronomy data
 if selected_day:
     try:
         dt_local = datetime(selected_day.year, selected_day.month, selected_day.day, 12, 0, 0)
