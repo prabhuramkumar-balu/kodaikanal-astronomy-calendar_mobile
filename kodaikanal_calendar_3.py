@@ -7,115 +7,40 @@ import pytz
 import ephem
 import pandas as pd
 
-# Calendar setup
+# Setup
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
-# Location for Kodaikanal
 latitude = 10 + 13 / 60 + 50 / 3600
 longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
-# UI setup
-st.set_page_config(
-    page_title="Kodaikanal Astronomy Calendar",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="Kodaikanal Astronomy Calendar", layout="centered")
 
 st.title("📅 Kodaikanal Astronomy Calendar")
 st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, and Planetary Rise/Set Times (IST, 12-hour format)")
 
 # Inputs
 year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year)
-
 months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
+default_month_idx = date.today().month - 1
+month_index = st.selectbox("Select Month", options=range(12), format_func=lambda i: months[i], index=default_month_idx)
+month = month_index + 1
 
-default_month_index = date.today().month - 1
-month_index = st.selectbox(
-    "Select Month",
-    options=range(12),
-    format_func=lambda i: months[i],
-    index=default_month_index,
-)
-month_name = months[month_index]
+calendar_data = monthcalendar(year, month)
 
-calendar_data = monthcalendar(year, month_index + 1)
+# Select day via radio buttons (or grid calendar)
+day = st.radio("Select Day", options=[d for week in calendar_data for d in week if d != 0], index=date.today().day - 1 if (year, month) == (date.today().year, date.today().month) else 0)
 
-days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+# Compose selected date object
+selected_date = date(year, month, day)
 
-use_list_view = st.checkbox("📱 Use mobile-friendly list view", value=False)
-
-selected_day = None
-
-def render_calendar_html():
-    today = date.today()
-    html = """
-    <style>
-    .calendar { width: 100%; border-collapse: collapse; }
-    .calendar th, .calendar td {
-        border: 1px solid #ccc;
-        text-align: center;
-        padding: 0.6em;
-        font-size: 0.95em;
-    }
-    .calendar th {
-        background: #f0f0f0;
-    }
-    .today {
-        background-color: #a3d3a2;
-        font-weight: bold;
-    }
-    .calendar-btn {
-        width: 100%;
-        border: none;
-        background: none;
-        font-size: 1em;
-        padding: 0.4em;
-        cursor: pointer;
-    }
-    </style>
-    <form method="GET">
-    <table class='calendar'>
-        <tr>""" + "".join(f"<th>{d}</th>" for d in days) + "</tr>"
-
-    for week in calendar_data:
-        html += "<tr>"
-        for day in week:
-            if day == 0:
-                html += "<td></td>"
-            else:
-                is_today = (year, month_index + 1, day) == (today.year, today.month, today.day)
-                cell_class = "today" if is_today else ""
-                html += f"""<td class="{cell_class}">
-                    <button class="calendar-btn" name="selected_day" value="{day}">{day}</button>
-                </td>"""
-        html += "</tr>"
-    html += "</table></form>"
-    return html
-
-if use_list_view:
-    st.write("### Select Day")
-    for week in calendar_data:
-        for day in week:
-            if day != 0:
-                label = f"{day}"
-                if date.today() == date(year, month_index + 1, day):
-                    label = f"🟢 {day}"
-                if st.button(label, key=f"{year}-{month_index + 1}-{day}"):
-                    selected_day = date(year, month_index + 1, day)
-else:
-    st.markdown(render_calendar_html(), unsafe_allow_html=True)
-    selected_day_param = st.query_params.get("selected_day", [None])[0]
-    if selected_day_param:
-        try:
-            selected_day = date(year, month_index + 1, int(selected_day_param))
-        except:
-            pass
+# Highlight current day for UI
+today = date.today()
 
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
@@ -153,60 +78,60 @@ def describe_moon_phase(illum):
     else:
         return "Waning Crescent"
 
-if selected_day:
-    try:
-        dt_local = datetime(selected_day.year, selected_day.month, selected_day.day, 12, 0, 0)
-        dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
+# Astronomy calculations strictly for selected_date
+try:
+    dt_local = datetime(selected_date.year, selected_date.month, selected_date.day, 12, 0, 0)
+    dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
 
-        sun_times = sun(astral_city.observer, date=dt_local, tzinfo=pytz.timezone(timezone))
-        sunrise_ist = sun_times['sunrise'].strftime('%I:%M %p')
-        sunset_ist = sun_times['sunset'].strftime('%I:%M %p')
+    sun_times = sun(astral_city.observer, date=dt_local, tzinfo=pytz.timezone(timezone))
+    sunrise_ist = sun_times['sunrise'].strftime('%I:%M %p')
+    sunset_ist = sun_times['sunset'].strftime('%I:%M %p')
 
-        observer = ephem.Observer()
-        observer.lat = str(latitude)
-        observer.lon = str(longitude)
-        observer.elevation = 2133
-        observer.date = dt_utc
+    observer = ephem.Observer()
+    observer.lat = str(latitude)
+    observer.lon = str(longitude)
+    observer.elevation = 2133
+    observer.date = dt_utc
 
-        moon = ephem.Moon(observer)
-        moon_phase = moon.phase
-        moon_phase_desc = describe_moon_phase(moon_phase)
-        moonrise_utc, moonset_utc = get_rise_set(observer, moon)
-        moonrise_ist = to_ist_12h(moonrise_utc)
-        moonset_ist = to_ist_12h(moonset_utc)
+    moon = ephem.Moon(observer)
+    moon_phase = moon.phase
+    moon_phase_desc = describe_moon_phase(moon_phase)
+    moonrise_utc, moonset_utc = get_rise_set(observer, moon)
+    moonrise_ist = to_ist_12h(moonrise_utc)
+    moonset_ist = to_ist_12h(moonset_utc)
 
-        planets = {
-            "Mercury": ephem.Mercury(),
-            "Venus": ephem.Venus(),
-            "Mars": ephem.Mars(),
-            "Jupiter": ephem.Jupiter(),
-            "Saturn": ephem.Saturn(),
-        }
+    planets = {
+        "Mercury": ephem.Mercury(),
+        "Venus": ephem.Venus(),
+        "Mars": ephem.Mars(),
+        "Jupiter": ephem.Jupiter(),
+        "Saturn": ephem.Saturn(),
+    }
 
-        planet_times = {}
-        for pname, pbody in planets.items():
-            rise_dt, set_dt = get_rise_set(observer, pbody)
-            planet_times[pname] = (to_ist_12h(rise_dt), to_ist_12h(set_dt))
+    planet_times = {}
+    for pname, pbody in planets.items():
+        rise_dt, set_dt = get_rise_set(observer, pbody)
+        planet_times[pname] = (to_ist_12h(rise_dt), to_ist_12h(set_dt))
 
-        st.markdown("---")
-        st.header(f"Astronomy Data for {dt_local.strftime('%A, %d %B %Y')}")
+    st.markdown("---")
+    st.header(f"Astronomy Data for {selected_date.strftime('%A, %d %B %Y')}")
 
-        with st.expander("🌅 Sunrise & Sunset"):
-            st.write(f"**Sunrise:** {sunrise_ist} IST")
-            st.write(f"**Sunset:** {sunset_ist} IST")
+    with st.expander("🌅 Sunrise & Sunset"):
+        st.write(f"**Sunrise:** {sunrise_ist} IST")
+        st.write(f"**Sunset:** {sunset_ist} IST")
 
-        with st.expander("🌕 Moon Phase and Moonrise/Moonset"):
-            st.write(f"Illumination: **{moon_phase:.1f}%** ({moon_phase_desc})")
-            st.write(f"**Moonrise:** {moonrise_ist} IST")
-            st.write(f"**Moonset:** {moonset_ist} IST")
+    with st.expander("🌕 Moon Phase and Moonrise/Moonset"):
+        st.write(f"Illumination: **{moon_phase:.1f}%** ({moon_phase_desc})")
+        st.write(f"**Moonrise:** {moonrise_ist} IST")
+        st.write(f"**Moonset:** {moonset_ist} IST")
 
-        planet_df = pd.DataFrame.from_dict(
-            planet_times,
-            orient='index',
-            columns=["Rise (IST)", "Set (IST)"]
-        )
-        with st.expander("🪐 Planet Rise/Set Times"):
-            st.dataframe(planet_df, use_container_width=True)
+    planet_df = pd.DataFrame.from_dict(
+        planet_times,
+        orient='index',
+        columns=["Rise (IST)", "Set (IST)"]
+    )
+    with st.expander("🪐 Planet Rise/Set Times"):
+        st.dataframe(planet_df, use_container_width=True)
 
-    except Exception as e:
-        st.error(f"Error retrieving data: {e}")
+except Exception as e:
+    st.error(f"Error retrieving data: {e}")
