@@ -16,10 +16,44 @@ st.set_page_config(page_title="Kodaikanal Astronomy Calendar", layout="centered"
 st.title("📅 Kodaikanal Astronomy Calendar")
 st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, Planetary Rise/Set & Zenith Times (IST, 12-hour format)")
 
-# --- Display Current IST Time (updates on refresh/interact only) ---
+# --- Display Current IST Time ---
 now_ist = datetime.now(IST)
 st.markdown(f"### 📅 Current IST Date: `{now_ist.strftime('%d-%m-%Y')}`")
 st.markdown(f"### ⏰ Current IST Time: `{now_ist.strftime('%I:%M:%S %p')}`")
+
+# --- Location Info ---
+st.markdown("#### 📍 Location: Kodaikanal, India")
+st.markdown("**🗺 Latitude:** 10.2306° N &nbsp;&nbsp;&nbsp; **🗺 Longitude:** 77.4686° E")
+st.markdown("**🏔 Altitude:** 2343 m")
+
+# --- Inject JavaScript for Device Detection ---
+st.markdown("""
+<script>
+const screenWidth = window.innerWidth;
+const isMobile = screenWidth < 768;
+window.parent.postMessage({type: 'streamlit:setComponentValue', key: 'mobile_view', value: isMobile}, '*');
+</script>
+""", unsafe_allow_html=True)
+
+# --- Session State Defaults ---
+if "selected_date" not in st.session_state:
+    st.session_state.selected_date = now_ist.date()
+if "mobile_view" not in st.session_state:
+    st.session_state.mobile_view = False  # Default
+
+# --- JavaScript Sync Handler ---
+from streamlit.components.v1 import html
+
+def update_mobile_flag():
+    html("""
+    <script>
+    const screenWidth = window.innerWidth;
+    const isMobile = screenWidth < 768;
+    window.parent.postMessage({type: 'streamlit:setComponentValue', key: 'mobile_view', value: isMobile}, '*');
+    </script>
+    """, height=0)
+
+update_mobile_flag()
 
 # --- Year/Month Selection ---
 year = st.number_input("Select Year", min_value=1900, max_value=2100, value=now_ist.year)
@@ -28,28 +62,41 @@ month_name = st.selectbox("Select Month", months, index=now_ist.month-1)
 month_num = months.index(month_name) + 1
 cal = monthcalendar(year, month_num)
 
-# --- Selected Date Management ---
-if "selected_date" not in st.session_state:
-    st.session_state.selected_date = now_ist.date()
-
-# --- Calendar Display (Grid View) ---
+# --- Responsive Calendar Display ---
 st.markdown("### 📆 Click a Day")
-cols = st.columns(7)
-for idx, d in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]):
-    cols[idx].markdown(f"**{d}**")
+weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-for week in cal:
+is_mobile = st.session_state.mobile_view
+
+# Headers
+if not is_mobile:
     cols = st.columns(7)
-    for idx, day in enumerate(week):
-        if day == 0:
-            cols[idx].markdown(" ")
-        else:
-            dt = date(year, month_num, day)
-            btn_label = f"{day}"
-            if cols[idx].button(btn_label, key=f"{year}-{month_num}-{day}"):
-                st.session_state.selected_date = dt
+    for idx, d in enumerate(weekday_labels):
+        cols[idx].markdown(f"**{d}**")
+else:
+    st.markdown("**Weekdays:**")
+    st.markdown(", ".join(weekday_labels))
 
-# --- Astronomy Calculations for Selected Date ---
+# Day Buttons
+for week in cal:
+    if not is_mobile:
+        cols = st.columns(7)
+        for idx, day in enumerate(week):
+            if day == 0:
+                cols[idx].markdown(" ")
+            else:
+                dt = date(year, month_num, day)
+                if cols[idx].button(str(day), key=f"{year}-{month_num}-{day}"):
+                    st.session_state.selected_date = dt
+    else:
+        for idx, day in enumerate(week):
+            if day != 0:
+                dt = date(year, month_num, day)
+                label = f"{weekday_labels[idx]} {day}"
+                if st.button(label, key=f"mob-{year}-{month_num}-{day}"):
+                    st.session_state.selected_date = dt
+
+# --- Astronomy Calculations ---
 sel = st.session_state.selected_date
 st.markdown("---")
 st.header(f"🌠 Astronomy Data for {sel.strftime('%A, %d %B %Y')}")
@@ -59,7 +106,9 @@ def to_ist(dt):
 
 observer = ephem.Observer()
 observer.lat, observer.lon = str(location.latitude), str(location.longitude)
-observer.date = datetime(sel.year, sel.month, sel.day, 0, 0, tzinfo=IST).astimezone(pytz.utc)
+
+# Important: Set observer date as naive UTC for ephem
+observer.date = datetime(sel.year, sel.month, sel.day).strftime('%Y/%m/%d')
 
 # Sun Times
 sun_times = sun(location.observer, date=sel, tzinfo=IST)
@@ -67,6 +116,7 @@ sunrise, sunset, solar_noon = [sun_times[k].strftime("%I:%M %p") for k in ("sunr
 
 # Moon & Planet Data
 def get_times(body):
+    observer.date = datetime(sel.year, sel.month, sel.day).strftime('%Y/%m/%d')  # reset each time
     try:
         rise = observer.next_rising(body).datetime()
     except:
@@ -111,7 +161,7 @@ with st.expander("🌕 Moon"):
     st.write(f"**Moonset:** {moon_set}")
     st.write(f"**Moon Zenith:** {moon_zen}")
 
-# Planet DataFrame
+# Planet Table
 planet_df = pd.DataFrame.from_dict(
     planet_times,
     orient="index",
