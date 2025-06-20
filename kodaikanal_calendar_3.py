@@ -6,6 +6,7 @@ from astral.sun import sun
 from astral import LocationInfo
 import ephem
 import pandas as pd
+from urllib.parse import urlencode
 
 # --- Setup ---
 setfirstweekday(MONDAY)
@@ -37,29 +38,77 @@ month_name = st.selectbox("Select Month", months, index=now_ist.month-1)
 month_num = months.index(month_name) + 1
 cal = monthcalendar(year, month_num)
 
-# --- Calendar Grid ---
+# --- Responsive Calendar Grid using HTML ---
 st.markdown("### 📆 Click a Day")
+
 weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+params = st.experimental_get_query_params()
+
+if "d" in params:
+    try:
+        clicked_day = int(params["d"][0])
+        st.session_state.selected_date = date(year, month_num, clicked_day)
+    except:
+        pass
+
+# Generate calendar grid HTML
+calendar_html = f"""
+<style>
+.calendar {{
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+  text-align: center;
+}}
+.calendar-day {{
+  padding: 10px;
+  border-radius: 5px;
+  background-color: #f0f2f6;
+  cursor: pointer;
+  font-weight: bold;
+}}
+.calendar-day.today {{
+  background-color: #ffdca9;
+}}
+.calendar-day.selected {{
+  background-color: #add8e6;
+}}
+.calendar-header {{
+  font-weight: bold;
+  padding: 5px;
+  background-color: #dbeafe;
+  border-radius: 5px;
+}}
+a {{
+  text-decoration: none;
+  color: inherit;
+}}
+</style>
+
+<div class="calendar">
+"""
 
 # Weekday Headers
-cols = st.columns(7)
-for idx, d in enumerate(weekday_labels):
-    cols[idx].markdown(f"**{d}**")
+for wd in weekday_labels:
+    calendar_html += f'<div class="calendar-header">{wd}</div>'
 
-# Day Buttons
-today = now_ist.date()
+# Calendar Days
 for week in cal:
-    cols = st.columns(7)
-    for idx, day in enumerate(week):
+    for day in week:
         if day == 0:
-            cols[idx].markdown(" ")
+            calendar_html += '<div></div>'
         else:
-            dt = date(year, month_num, day)
-            label = f"**:orange[{day}]**" if dt == today else str(day)
-            if dt == st.session_state.selected_date:
-                label = f"**:blue[{day}]**"
-            if cols[idx].button(label, key=f"{year}-{month_num}-{day}"):
-                st.session_state.selected_date = dt
+            classes = "calendar-day"
+            if date(year, month_num, day) == now_ist.date():
+                classes += " today"
+            if date(year, month_num, day) == st.session_state.selected_date:
+                classes += " selected"
+            query = urlencode({"d": day})
+            calendar_html += f'<div class="{classes}"><a href="?{query}">{day}</a></div>'
+
+calendar_html += "</div>"
+
+st.markdown(calendar_html, unsafe_allow_html=True)
 
 # --- Astronomy Calculations ---
 sel = st.session_state.selected_date
