@@ -42,53 +42,11 @@ if "selected_day" not in st.session_state:
     else:
         st.session_state.selected_day = 1
 
-# When user clicks on a day button, update selected_day in session_state
 def select_day(day):
     st.session_state.selected_day = day
 
-# Display calendar grid with clickable buttons for days
+# Display calendar grid with buttons, highlight selected (green) and today (red)
 st.write("### Select Day")
-
-calendar_html = """
-<style>
-.calendar { border-collapse: collapse; width: 100%; max-width: 400px; margin-bottom: 1em; }
-.calendar th, .calendar td { border: 1px solid #ccc; text-align: center; padding: 0.5em; font-size: 1em; }
-.calendar th { background-color: #f0f0f0; }
-.selected { background-color: #a3d3a2; font-weight: bold; }
-.button-day { background: none; border: none; cursor: pointer; font-size: 1em; width: 100%; height: 100%; }
-</style>
-"""
-
-calendar_html += "<table class='calendar'><thead><tr>"
-for d in days_of_week:
-    calendar_html += f"<th>{d}</th>"
-calendar_html += "</tr></thead><tbody>"
-
-for week in calendar_data:
-    calendar_html += "<tr>"
-    for day in week:
-        if day == 0:
-            calendar_html += "<td></td>"
-        else:
-            # Highlight selected day
-            selected_class = "selected" if day == st.session_state.selected_day else ""
-            # Use a form button for each day
-            # We'll create a form for each day so clicking submits and updates session state
-            calendar_html += f"""
-            <td class="{selected_class}">
-                <form action="" method="post">
-                    <input type="hidden" name="day" value="{day}">
-                    <button class="button-day" type="submit">{day}</button>
-                </form>
-            </td>
-            """
-    calendar_html += "</tr>"
-calendar_html += "</tbody></table>"
-
-# Streamlit can't process raw html forms natively with callback, so we'll handle clicks differently:
-# Instead, use st.button for each day arranged in columns to mimic grid:
-
-st.write("")
 
 cols = st.columns(7)
 for col_idx, d in enumerate(days_of_week):
@@ -100,12 +58,26 @@ for week in calendar_data:
         if day == 0:
             cols[i].write(" ")
         else:
+            today = date.today()
             is_selected = (day == st.session_state.selected_day)
-            button_label = f"**{day}**" if is_selected else str(day)
-            if cols[i].button(button_label, key=f"day_{day}", help=f"Select day {day}"):
-                select_day(day)
+            is_today = (day == today.day and month_index == today.month and year == today.year)
+            
+            style = ""
+            if is_selected:
+                style = "background-color:#a3d3a2; font-weight: bold; color: black;"  # green bg
+            elif is_today:
+                style = "background-color:#e57373; font-weight: bold; color: white;"   # red bg
 
-# Now get the selected date
+            if cols[i].button(f"{day}", key=f"day_{day}", help=f"Select day {day}"):
+                select_day(day)
+            # Add colored background by rendering HTML inside the button label (Streamlit buttons do not support styles directly)
+            # So instead we'll just mark the day text with emojis or formatting here:
+            if is_selected:
+                cols[i].markdown(f"<div style='{style}'>{day}</div>", unsafe_allow_html=True)
+            elif is_today:
+                cols[i].markdown(f"<div style='{style}'>{day}</div>", unsafe_allow_html=True)
+
+# Selected date
 selected_date = date(year, month_index, st.session_state.selected_day)
 
 # Astronomy calculations
@@ -127,6 +99,15 @@ def get_rise_set(observer, body):
     except (ephem.AlwaysUpError, ephem.NeverUpError):
         set_ = None
     return rise.datetime() if rise else "N/A", set_.datetime() if set_ else "N/A"
+
+def get_zenith(observer, body):
+    # Zenith is highest altitude: closest approach to meridian
+    # Use next_transit for this, which is the time object crosses meridian (culmination)
+    try:
+        transit = observer.next_transit(body)
+        return transit.datetime()
+    except (ephem.AlwaysUpError, ephem.NeverUpError):
+        return "N/A"
 
 def describe_moon_phase(illum):
     if illum < 1:
@@ -166,6 +147,10 @@ try:
     moonrise_utc, moonset_utc = get_rise_set(observer, moon)
     moonrise_ist = to_ist_12h(moonrise_utc)
     moonset_ist = to_ist_12h(moonset_utc)
+    moon_zenith_ist = to_ist_12h(get_zenith(observer, moon))
+
+    sun = ephem.Sun(observer)
+    sun_zenith_ist = to_ist_12h(get_zenith(observer, sun))
 
     planets = {
         "Mercury": ephem.Mercury(),
@@ -178,26 +163,33 @@ try:
     planet_times = {}
     for pname, pbody in planets.items():
         rise_dt, set_dt = get_rise_set(observer, pbody)
-        planet_times[pname] = (to_ist_12h(rise_dt), to_ist_12h(set_dt))
+        zenith_dt = get_zenith(observer, pbody)
+        planet_times[pname] = (
+            to_ist_12h(rise_dt),
+            to_ist_12h(set_dt),
+            to_ist_12h(zenith_dt),
+        )
 
     st.markdown("---")
     st.header(f"Astronomy Data for {selected_date.strftime('%A, %d %B %Y')}")
 
-    with st.expander("🌅 Sunrise & Sunset"):
+    with st.expander("🌅 Sunrise, Sunset & Zenith"):
         st.write(f"**Sunrise:** {sunrise_ist} IST")
         st.write(f"**Sunset:** {sunset_ist} IST")
+        st.write(f"**Sun Zenith (Transit):** {sun_zenith_ist} IST")
 
-    with st.expander("🌕 Moon Phase and Moonrise/Moonset"):
+    with st.expander("🌕 Moon Phase and Moonrise/Moonset/Zenith"):
         st.write(f"Illumination: **{moon_phase:.1f}%** ({moon_phase_desc})")
         st.write(f"**Moonrise:** {moonrise_ist} IST")
         st.write(f"**Moonset:** {moonset_ist} IST")
+        st.write(f"**Moon Zenith (Transit):** {moon_zenith_ist} IST")
 
     planet_df = pd.DataFrame.from_dict(
         planet_times,
         orient='index',
-        columns=["Rise (IST)", "Set (IST)"]
+        columns=["Rise (IST)", "Set (IST)", "Zenith (IST)"]
     )
-    with st.expander("🪐 Planet Rise/Set Times"):
+    with st.expander("🪐 Planet Rise/Set/Zenith Times"):
         st.dataframe(planet_df, use_container_width=True)
 
 except Exception as e:
