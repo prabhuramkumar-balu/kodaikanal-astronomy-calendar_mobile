@@ -48,7 +48,7 @@ st.session_state.selected_month = month_index + 1
 calendar_data = monthcalendar(st.session_state.selected_year, st.session_state.selected_month)
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# --- Calendar Grid (Buttons) ---
+# --- Calendar Grid (Plain, No Highlights) ---
 def render_calendar_buttons():
     st.markdown("### Calendar")
     cols = st.columns(7)
@@ -61,23 +61,8 @@ def render_calendar_buttons():
             if day == 0:
                 cols[i].write("")  # Empty cell
             else:
-                is_today = (day == today.day and
-                            st.session_state.selected_month == today.month and
-                            st.session_state.selected_year == today.year)
-                is_selected = (day == st.session_state.selected_day)
-
-                style = ""
-                if is_today:
-                    style = "background-color: #f99; color: white; font-weight: bold;"
-                elif is_selected:
-                    style = "background-color: #9f9; font-weight: bold;"
-
                 if cols[i].button(str(day), key=f"btn_{day}"):
                     st.session_state.selected_day = day
-
-                # Highlight
-                if style:
-                    cols[i].markdown(f"<div style='{style}; text-align: center;'>{day}</div>", unsafe_allow_html=True)
 
 render_calendar_buttons()
 
