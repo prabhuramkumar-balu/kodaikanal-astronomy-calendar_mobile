@@ -7,17 +7,17 @@ import pytz
 import ephem
 import pandas as pd
 
-# Calendar setup
+# Set calendar to start from Monday
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
-# Location for Kodaikanal
+# Location setup for Kodaikanal
 latitude = 10 + 13 / 60 + 50 / 3600
 longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
-# UI setup
+# Page setup
 st.set_page_config(
     page_title="Kodaikanal Astronomy Calendar",
     layout="centered",
@@ -35,27 +35,29 @@ months = [
     "July", "August", "September", "October", "November", "December"
 ]
 
-# Use session_state to persist selected month
-if "selected_month" not in st.session_state:
-    st.session_state.selected_month = date.today().month
+# Track selected month index safely
+if "selected_month_index" not in st.session_state:
+    st.session_state.selected_month_index = date.today().month - 1
 
 month_name = st.selectbox(
     "Select Month",
     months,
-    index=st.session_state.selected_month - 1,
-    key="selected_month"
+    index=st.session_state.selected_month_index,
+    key="selected_month_index"
 )
+
 month_index = months.index(month_name) + 1
 calendar_data = monthcalendar(year, month_index)
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Toggle for mobile view
+# Toggle for mobile list view
 use_list_view = st.checkbox("📱 Use mobile-friendly list view", value=False)
 
-# --- State for selected day ---
+# Track selected day
 if "selected_day" not in st.session_state:
     st.session_state.selected_day = None
 
+# --- Helper Functions ---
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
         return "N/A"
@@ -92,7 +94,7 @@ def describe_moon_phase(illum):
     else:
         return "Waning Crescent"
 
-# --- Calendar Display ---
+# --- Calendar UI ---
 today = date.today()
 st.markdown("### Select a Day")
 
@@ -100,11 +102,10 @@ if use_list_view:
     for week in calendar_data:
         for day in week:
             if day != 0:
-                label = f"🟢 {day}" if date.today() == date(year, month_index, day) else f"{day}"
-                if st.button(label, key=f"btn-{year}-{month_index}-{day}"):
+                label = f"🟢 {day}" if today == date(year, month_index, day) else str(day)
+                if st.button(label, key=f"list-{year}-{month_index}-{day}"):
                     st.session_state.selected_day = date(year, month_index, day)
 else:
-    # Render as grid calendar
     cols = st.columns(7)
     for i, day_name in enumerate(days):
         cols[i].markdown(f"**{day_name}**")
@@ -115,7 +116,7 @@ else:
             if day == 0:
                 cols[i].markdown(" ")
             else:
-                label = f"🟢 {day}" if today == date(year, month_index, day) else f"{day}"
+                label = f"🟢 {day}" if today == date(year, month_index, day) else str(day)
                 if cols[i].button(label, key=f"grid-{year}-{month_index}-{day}"):
                     st.session_state.selected_day = date(year, month_index, day)
 
@@ -174,6 +175,7 @@ if selected_day:
             orient='index',
             columns=["Rise (IST)", "Set (IST)"]
         )
+
         with st.expander("🪐 Planet Rise/Set Times"):
             st.dataframe(planet_df, use_container_width=True)
 
