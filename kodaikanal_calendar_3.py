@@ -1,6 +1,6 @@
 import streamlit as st
 from datetime import datetime, date
-from calendar import monthcalendar, setfirstweekday, MONDAY
+from calendar import monthrange
 from astral.sun import sun
 from astral.location import LocationInfo
 import pytz
@@ -8,7 +8,6 @@ import ephem
 import pandas as pd
 
 # Setup
-setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
 latitude = 10 + 13 / 60 + 50 / 3600
@@ -27,20 +26,20 @@ months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
-default_month_idx = date.today().month - 1
-month_index = st.selectbox("Select Month", options=range(12), format_func=lambda i: months[i], index=default_month_idx)
-month = month_index + 1
+month_index = st.selectbox("Select Month", options=range(12), format_func=lambda i: months[i], index=date.today().month - 1) + 1
 
-calendar_data = monthcalendar(year, month)
+# Get number of days in the selected month/year
+num_days = monthrange(year, month_index)[1]
 
-# Select day via radio buttons (or grid calendar)
-day = st.radio("Select Day", options=[d for week in calendar_data for d in week if d != 0], index=date.today().day - 1 if (year, month) == (date.today().year, date.today().month) else 0)
+# List days vertically
+st.write("### Select Day")
+day = st.radio(
+    label="",
+    options=list(range(1, num_days + 1)),
+    index=date.today().day - 1 if (year, month_index) == (date.today().year, date.today().month) else 0
+)
 
-# Compose selected date object
-selected_date = date(year, month, day)
-
-# Highlight current day for UI
-today = date.today()
+selected_date = date(year, month_index, day)
 
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
@@ -78,7 +77,6 @@ def describe_moon_phase(illum):
     else:
         return "Waning Crescent"
 
-# Astronomy calculations strictly for selected_date
 try:
     dt_local = datetime(selected_date.year, selected_date.month, selected_date.day, 12, 0, 0)
     dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
