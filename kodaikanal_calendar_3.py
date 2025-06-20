@@ -44,7 +44,7 @@ today = now_ist.date()
 weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 # Prepare calendar table data (strings with markdown for coloring)
-table_data = [weekday_labels]
+table_data = []
 
 for week in cal:
     row = []
@@ -54,21 +54,23 @@ for week in cal:
         else:
             dt = date(year, month_num, day)
             if dt == today:
-                row.append(f"**:orange[{day}]**")  # Orange today
+                # Mark today in orange
+                row.append(f"🟠 {day}")
             elif dt == st.session_state.selected_date:
-                row.append(f"**:blue[{day}]**")    # Blue selected
+                # Mark selected day in blue
+                row.append(f"🔵 {day}")
             else:
                 row.append(str(day))
     table_data.append(row)
 
-# Convert to DataFrame for display
-df = pd.DataFrame(table_data[1:], columns=table_data[0])
+# Convert to DataFrame for display with weekday labels as columns
+df = pd.DataFrame(table_data, columns=weekday_labels)
 
 st.markdown("### 📅 Calendar")
-st.markdown("**Legend:** :orange[Today]  |  :blue[Selected Day]")
+st.markdown("**Legend:** 🟠 Today  |  🔵 Selected Day")
 
-# Show calendar table as markdown (streamlit supports markdown tables)
-st.write(df.to_markdown(index=False), unsafe_allow_html=True)
+# Display calendar table as dataframe (no markdown, no tabulate dependency)
+st.dataframe(df, use_container_width=True, height=250)
 
 # Day selection dropdown
 days_in_month = [day for week in cal for day in week if day != 0]
