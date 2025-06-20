@@ -12,45 +12,52 @@ setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 today = date.today()
 
-# Kodaikanal Location
+# Location
 latitude = 10 + 13 / 60 + 50 / 3600
 longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
-# Page Config
+# Page
 st.set_page_config("Kodaikanal Astronomy Calendar", layout="centered")
-
 st.title("📅 Kodaikanal Astronomy Calendar")
 st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, Planetary Rise/Set & Zenith Times (IST, 12-hour format)")
 
-# Year and Month Select
-year = st.number_input("Select Year", 1900, 2100, value=today.year)
+# ------------------------ Session State Management ------------------------
+# Setup session defaults
+if "selected_year" not in st.session_state:
+    st.session_state.selected_year = today.year
+if "selected_month" not in st.session_state:
+    st.session_state.selected_month = today.month
+if "selected_day" not in st.session_state:
+    st.session_state.selected_day = today.day
+
+# Capture query param ?day=xx
+query_day = st.query_params.get("day", [None])[0]
+if query_day and "url_day_set" not in st.session_state:
+    try:
+        st.session_state.selected_day = int(query_day)
+        st.session_state.url_day_set = True  # Set once
+    except:
+        pass
+
+# ------------------------ UI for Year/Month ------------------------
 months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
-month_index = st.selectbox("Select Month", range(12), format_func=lambda i: months[i]) + 1
 
-calendar_data = monthcalendar(year, month_index)
+year = st.number_input("Select Year", 1900, 2100, value=st.session_state.selected_year)
+month_index = st.selectbox("Select Month", range(12), format_func=lambda i: months[i], index=st.session_state.selected_month - 1)
+
+# Update session values
+st.session_state.selected_year = year
+st.session_state.selected_month = month_index + 1
+
+calendar_data = monthcalendar(st.session_state.selected_year, st.session_state.selected_month)
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Session state for selected day
-if "selected_day" not in st.session_state:
-    if year == today.year and month_index == today.month:
-        st.session_state.selected_day = today.day
-    else:
-        st.session_state.selected_day = 1
-
-# Handle query param on first load
-query_day = st.query_params.get("day", [None])[0]
-if query_day:
-    try:
-        st.session_state.selected_day = int(query_day)
-    except:
-        pass
-
-# HTML Calendar Grid
+# ------------------------ Calendar Grid HTML ------------------------
 def render_calendar_html():
     html = """
     <style>
@@ -60,9 +67,7 @@ def render_calendar_html():
             padding: 0.6em;
             text-align: center;
         }
-        .calendar th {
-            background: #f0f0f0;
-        }
+        .calendar th { background: #f0f0f0; }
         .calendar td a {
             display: block;
             text-decoration: none;
@@ -88,7 +93,11 @@ def render_calendar_html():
                 html += "<td></td>"
             else:
                 css_class = ""
-                if (day == today.day and year == today.year and month_index == today.month):
+                if (
+                    day == today.day and
+                    st.session_state.selected_year == today.year and
+                    st.session_state.selected_month == today.month
+                ):
                     css_class = "today"
                 if day == st.session_state.selected_day:
                     css_class = "selected"
@@ -101,14 +110,15 @@ def render_calendar_html():
 
 st.markdown(render_calendar_html(), unsafe_allow_html=True)
 
-# Astronomy calculations
-try:
-    selected_date = date(year, month_index, st.session_state.selected_day)
-except Exception:
-    st.error("Invalid date selected.")
-    st.stop()
-
-dt_local = datetime(selected_date.year, selected_date.month, selected_date.day, 12, 0, 0)
+# ------------------------ Astronomy Calculations ------------------------
+selected_date = date(
+    st.session_state.selected_year,
+    st.session_state.selected_month,
+    st.session_state.selected_day
+)
+dt_local = datetime(
+    selected_date.year, selected_date.month, selected_date.day, 12, 0, 0
+)
 dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
 
 def to_ist_12h(dt_utc):
@@ -183,7 +193,7 @@ for name, body in planets.items():
         to_ist_12h(zen)
     )
 
-# Display Data
+# ------------------------ Display Data ------------------------
 st.markdown("---")
 st.header(f"Astronomy Data for {selected_date.strftime('%A, %d %B %Y')}")
 
