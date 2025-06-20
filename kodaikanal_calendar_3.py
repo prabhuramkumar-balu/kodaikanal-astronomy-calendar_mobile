@@ -3,7 +3,7 @@ from datetime import datetime, date
 from calendar import monthcalendar, setfirstweekday, MONDAY
 import pytz
 from astral.sun import sun
-from astral.location import LocationInfo
+from astral import LocationInfo
 import ephem
 import pandas as pd
 
@@ -26,34 +26,9 @@ st.markdown("#### 📍 Location: Kodaikanal, India")
 st.markdown("**🗺 Latitude:** 10.2306° N &nbsp;&nbsp;&nbsp; **🗺 Longitude:** 77.4686° E")
 st.markdown("**🏔 Altitude:** 2343 m")
 
-# --- Inject JavaScript for Device Detection ---
-st.markdown("""
-<script>
-const screenWidth = window.innerWidth;
-const isMobile = screenWidth < 768;
-window.parent.postMessage({type: 'streamlit:setComponentValue', key: 'mobile_view', value: isMobile}, '*');
-</script>
-""", unsafe_allow_html=True)
-
 # --- Session State Defaults ---
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = now_ist.date()
-if "mobile_view" not in st.session_state:
-    st.session_state.mobile_view = False  # Default
-
-# --- JavaScript Sync Handler ---
-from streamlit.components.v1 import html
-
-def update_mobile_flag():
-    html("""
-    <script>
-    const screenWidth = window.innerWidth;
-    const isMobile = screenWidth < 768;
-    window.parent.postMessage({type: 'streamlit:setComponentValue', key: 'mobile_view', value: isMobile}, '*');
-    </script>
-    """, height=0)
-
-update_mobile_flag()
 
 # --- Year/Month Selection ---
 year = st.number_input("Select Year", min_value=1900, max_value=2100, value=now_ist.year)
@@ -62,39 +37,29 @@ month_name = st.selectbox("Select Month", months, index=now_ist.month-1)
 month_num = months.index(month_name) + 1
 cal = monthcalendar(year, month_num)
 
-# --- Responsive Calendar Display ---
+# --- Calendar Grid ---
 st.markdown("### 📆 Click a Day")
 weekday_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-is_mobile = st.session_state.mobile_view
-
-# Headers
-if not is_mobile:
-    cols = st.columns(7)
-    for idx, d in enumerate(weekday_labels):
-        cols[idx].markdown(f"**{d}**")
-else:
-    st.markdown("**Weekdays:**")
-    st.markdown(", ".join(weekday_labels))
+# Weekday Headers
+cols = st.columns(7)
+for idx, d in enumerate(weekday_labels):
+    cols[idx].markdown(f"**{d}**")
 
 # Day Buttons
+today = now_ist.date()
 for week in cal:
-    if not is_mobile:
-        cols = st.columns(7)
-        for idx, day in enumerate(week):
-            if day == 0:
-                cols[idx].markdown(" ")
-            else:
-                dt = date(year, month_num, day)
-                if cols[idx].button(str(day), key=f"{year}-{month_num}-{day}"):
-                    st.session_state.selected_date = dt
-    else:
-        for idx, day in enumerate(week):
-            if day != 0:
-                dt = date(year, month_num, day)
-                label = f"{weekday_labels[idx]} {day}"
-                if st.button(label, key=f"mob-{year}-{month_num}-{day}"):
-                    st.session_state.selected_date = dt
+    cols = st.columns(7)
+    for idx, day in enumerate(week):
+        if day == 0:
+            cols[idx].markdown(" ")
+        else:
+            dt = date(year, month_num, day)
+            label = f"**:orange[{day}]**" if dt == today else str(day)
+            if dt == st.session_state.selected_date:
+                label = f"**:blue[{day}]**"
+            if cols[idx].button(label, key=f"{year}-{month_num}-{day}"):
+                st.session_state.selected_date = dt
 
 # --- Astronomy Calculations ---
 sel = st.session_state.selected_date
@@ -104,36 +69,54 @@ st.header(f"🌠 Astronomy Data for {sel.strftime('%A, %d %B %Y')}")
 def to_ist(dt):
     return dt.astimezone(IST).strftime("%I:%M %p") if dt else "N/A"
 
-observer = ephem.Observer()
-observer.lat, observer.lon = str(location.latitude), str(location.longitude)
-
-# Important: Set observer date as naive UTC for ephem
-observer.date = datetime(sel.year, sel.month, sel.day).strftime('%Y/%m/%d')
-
 # Sun Times
 sun_times = sun(location.observer, date=sel, tzinfo=IST)
 sunrise, sunset, solar_noon = [sun_times[k].strftime("%I:%M %p") for k in ("sunrise", "sunset", "noon")]
 
+# Observer Setup
+observer = ephem.Observer()
+observer.lat, observer.lon = str(location.latitude), str(location.longitude)
+observer.date = datetime(sel.year, sel.month, sel.day).strftime('%Y/%m/%d')
+
+# Moon Phase Name Helper
+def moon_phase_name(phase):
+    if phase < 1:
+        return "New Moon"
+    elif phase < 49:
+        return "Waxing Crescent"
+    elif phase < 51:
+        return "First Quarter"
+    elif phase < 99:
+        return "Waxing Gibbous"
+    elif phase <= 100:
+        return "Full Moon"
+    elif phase > 99:
+        return "Waning Gibbous"
+    elif phase > 51:
+        return "Last Quarter"
+    else:
+        return "Waning Crescent"
+
 # Moon & Planet Data
 def get_times(body):
-    observer.date = datetime(sel.year, sel.month, sel.day).strftime('%Y/%m/%d')  # reset each time
+    observer.date = datetime(sel.year, sel.month, sel.day)
     try:
-        rise = observer.next_rising(body).datetime()
+        rise = observer.next_rising(body).datetime().astimezone(IST)
     except:
         rise = None
     try:
-        set_ = observer.next_setting(body).datetime()
+        set_ = observer.next_setting(body).datetime().astimezone(IST)
     except:
         set_ = None
     try:
-        zen = observer.next_transit(body).datetime()
+        zen = observer.next_transit(body).datetime().astimezone(IST)
     except:
         zen = None
     return to_ist(rise), to_ist(set_), to_ist(zen)
 
 # Moon
 moon = ephem.Moon(observer)
-moon_phase_txt = f"{moon.phase:.1f}%"
+moon_phase_txt = f"{moon.phase:.1f}% ({moon_phase_name(moon.phase)})"
 moon_rise, moon_set, moon_zen = get_times(moon)
 
 # Planets
