@@ -1,15 +1,17 @@
 import streamlit as st
 from datetime import datetime, date
-from calendar import monthrange
+from calendar import monthcalendar, setfirstweekday, MONDAY
 from astral.sun import sun
 from astral.location import LocationInfo
 import pytz
 import ephem
 import pandas as pd
 
-# Setup
+# Setup calendar week to start on Monday
+setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
+# Location details for Kodaikanal
 latitude = 10 + 13 / 60 + 50 / 3600
 longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
@@ -28,18 +30,85 @@ months = [
 ]
 month_index = st.selectbox("Select Month", options=range(12), format_func=lambda i: months[i], index=date.today().month - 1) + 1
 
-# Get number of days in the selected month/year
-num_days = monthrange(year, month_index)[1]
+# Generate the month calendar (weeks with days)
+calendar_data = monthcalendar(year, month_index)
+days_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# List days vertically
+# Initialize selected day in session state if not present
+if "selected_day" not in st.session_state:
+    # Default to today's date if in current month/year, else 1st
+    if (year, month_index) == (date.today().year, date.today().month):
+        st.session_state.selected_day = date.today().day
+    else:
+        st.session_state.selected_day = 1
+
+# When user clicks on a day button, update selected_day in session_state
+def select_day(day):
+    st.session_state.selected_day = day
+
+# Display calendar grid with clickable buttons for days
 st.write("### Select Day")
-day = st.radio(
-    label="",
-    options=list(range(1, num_days + 1)),
-    index=date.today().day - 1 if (year, month_index) == (date.today().year, date.today().month) else 0
-)
 
-selected_date = date(year, month_index, day)
+calendar_html = """
+<style>
+.calendar { border-collapse: collapse; width: 100%; max-width: 400px; margin-bottom: 1em; }
+.calendar th, .calendar td { border: 1px solid #ccc; text-align: center; padding: 0.5em; font-size: 1em; }
+.calendar th { background-color: #f0f0f0; }
+.selected { background-color: #a3d3a2; font-weight: bold; }
+.button-day { background: none; border: none; cursor: pointer; font-size: 1em; width: 100%; height: 100%; }
+</style>
+"""
+
+calendar_html += "<table class='calendar'><thead><tr>"
+for d in days_of_week:
+    calendar_html += f"<th>{d}</th>"
+calendar_html += "</tr></thead><tbody>"
+
+for week in calendar_data:
+    calendar_html += "<tr>"
+    for day in week:
+        if day == 0:
+            calendar_html += "<td></td>"
+        else:
+            # Highlight selected day
+            selected_class = "selected" if day == st.session_state.selected_day else ""
+            # Use a form button for each day
+            # We'll create a form for each day so clicking submits and updates session state
+            calendar_html += f"""
+            <td class="{selected_class}">
+                <form action="" method="post">
+                    <input type="hidden" name="day" value="{day}">
+                    <button class="button-day" type="submit">{day}</button>
+                </form>
+            </td>
+            """
+    calendar_html += "</tr>"
+calendar_html += "</tbody></table>"
+
+# Streamlit can't process raw html forms natively with callback, so we'll handle clicks differently:
+# Instead, use st.button for each day arranged in columns to mimic grid:
+
+st.write("")
+
+cols = st.columns(7)
+for col_idx, d in enumerate(days_of_week):
+    cols[col_idx].markdown(f"**{d}**")
+
+for week in calendar_data:
+    cols = st.columns(7)
+    for i, day in enumerate(week):
+        if day == 0:
+            cols[i].write(" ")
+        else:
+            is_selected = (day == st.session_state.selected_day)
+            button_label = f"**{day}**" if is_selected else str(day)
+            if cols[i].button(button_label, key=f"day_{day}", help=f"Select day {day}"):
+                select_day(day)
+
+# Now get the selected date
+selected_date = date(year, month_index, st.session_state.selected_day)
+
+# Astronomy calculations
 
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
