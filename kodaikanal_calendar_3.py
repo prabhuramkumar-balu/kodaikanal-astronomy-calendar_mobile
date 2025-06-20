@@ -7,24 +7,23 @@ import pytz
 import ephem
 import pandas as pd
 
-# Setup
+# --- Setup ---
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 today = date.today()
 
-# Location
+# Location info
 latitude = 10 + 13 / 60 + 50 / 3600
 longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
-# Page
+# Page config
 st.set_page_config("Kodaikanal Astronomy Calendar", layout="centered")
 st.title("📅 Kodaikanal Astronomy Calendar")
 st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, Planetary Rise/Set & Zenith Times (IST, 12-hour format)")
 
-# ------------------------ Session State Management ------------------------
-# Setup session defaults
+# --- Session State Defaults ---
 if "selected_year" not in st.session_state:
     st.session_state.selected_year = today.year
 if "selected_month" not in st.session_state:
@@ -32,98 +31,69 @@ if "selected_month" not in st.session_state:
 if "selected_day" not in st.session_state:
     st.session_state.selected_day = today.day
 
-# Capture query param ?day=xx
-query_day = st.query_params.get("day", [None])[0]
-if query_day and "url_day_set" not in st.session_state:
-    try:
-        st.session_state.selected_day = int(query_day)
-        st.session_state.url_day_set = True  # Set once
-    except:
-        pass
-
-# ------------------------ UI for Year/Month ------------------------
+# --- UI: Year and Month Selection ---
 months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
 
 year = st.number_input("Select Year", 1900, 2100, value=st.session_state.selected_year)
-month_index = st.selectbox("Select Month", range(12), format_func=lambda i: months[i], index=st.session_state.selected_month - 1)
+month_index = st.selectbox("Select Month", range(12), format_func=lambda i: months[i],
+                           index=st.session_state.selected_month - 1)
 
-# Update session values
+# Update session state
 st.session_state.selected_year = year
 st.session_state.selected_month = month_index + 1
 
 calendar_data = monthcalendar(st.session_state.selected_year, st.session_state.selected_month)
 days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# ------------------------ Calendar Grid HTML ------------------------
-def render_calendar_html():
-    html = """
-    <style>
-        .calendar { width: 100%; border-collapse: collapse; font-size: 16px; }
-        .calendar th, .calendar td {
-            border: 1px solid #ccc;
-            padding: 0.6em;
-            text-align: center;
-        }
-        .calendar th { background: #f0f0f0; }
-        .calendar td a {
-            display: block;
-            text-decoration: none;
-            color: black;
-        }
-        .calendar .today {
-            background-color: #e57373;
-            color: white;
-            font-weight: bold;
-        }
-        .calendar .selected {
-            background-color: #a3d3a2;
-            font-weight: bold;
-        }
-    </style>
-    <table class="calendar">
-        <tr>""" + "".join(f"<th>{d}</th>" for d in days) + "</tr>"
-    
+# --- Calendar Grid (Buttons) ---
+def render_calendar_buttons():
+    st.markdown("### Calendar")
+    cols = st.columns(7)
+    for i, day in enumerate(days):
+        cols[i].markdown(f"**{day}**")
+
     for week in calendar_data:
-        html += "<tr>"
-        for day in week:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
             if day == 0:
-                html += "<td></td>"
+                cols[i].write("")  # Empty cell
             else:
-                css_class = ""
-                if (
-                    day == today.day and
-                    st.session_state.selected_year == today.year and
-                    st.session_state.selected_month == today.month
-                ):
-                    css_class = "today"
-                if day == st.session_state.selected_day:
-                    css_class = "selected"
-                html += f"""<td class="{css_class}">
-                    <a href="?day={day}">{day}</a>
-                </td>"""
-        html += "</tr>"
-    html += "</table>"
-    return html
+                is_today = (day == today.day and
+                            st.session_state.selected_month == today.month and
+                            st.session_state.selected_year == today.year)
+                is_selected = (day == st.session_state.selected_day)
 
-st.markdown(render_calendar_html(), unsafe_allow_html=True)
+                style = ""
+                if is_today:
+                    style = "background-color: #f99; color: white; font-weight: bold;"
+                elif is_selected:
+                    style = "background-color: #9f9; font-weight: bold;"
 
-# ------------------------ Astronomy Calculations ------------------------
+                if cols[i].button(str(day), key=f"btn_{day}"):
+                    st.session_state.selected_day = day
+
+                # Highlight
+                if style:
+                    cols[i].markdown(f"<div style='{style}; text-align: center;'>{day}</div>", unsafe_allow_html=True)
+
+render_calendar_buttons()
+
+# --- Astronomy Data ---
 selected_date = date(
     st.session_state.selected_year,
     st.session_state.selected_month,
     st.session_state.selected_day
 )
-dt_local = datetime(
-    selected_date.year, selected_date.month, selected_date.day, 12, 0, 0
-)
+dt_local = datetime(selected_date.year, selected_date.month, selected_date.day, 12, 0, 0)
 dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
 
 def to_ist_12h(dt_utc):
-    if dt_utc in ["N/A", None]: return "N/A"
-    dt_utc = pytz.utc.localize(dt_utc)
+    if dt_utc in ["N/A", None]:
+        return "N/A"
+    dt_utc = pytz.utc.localize(dt_utc) if dt_utc.tzinfo is None else dt_utc
     dt_ist = dt_utc.astimezone(IST)
     return dt_ist.strftime("%I:%M %p")
 
@@ -149,7 +119,7 @@ def describe_moon_phase(illum):
     elif illum == 50: return "Last Quarter"
     else: return "Waning Crescent"
 
-# Astral sun times
+# Astral Sun data
 try:
     sun_times = sun(astral_city.observer, date=selected_date, tzinfo=IST)
     sunrise = sun_times['sunrise'].strftime('%I:%M %p')
@@ -158,14 +128,14 @@ try:
 except:
     sunrise = sunset = solar_noon = "N/A"
 
-# Ephem observer
+# Ephem observer setup
 observer = ephem.Observer()
 observer.lat = str(latitude)
 observer.lon = str(longitude)
 observer.elevation = 2133
 observer.date = dt_utc
 
-# Moon data
+# Moon
 moon = ephem.Moon(observer)
 moon_phase = moon.phase
 moon_phase_desc = describe_moon_phase(moon_phase)
@@ -193,7 +163,7 @@ for name, body in planets.items():
         to_ist_12h(zen)
     )
 
-# ------------------------ Display Data ------------------------
+# --- Display Results ---
 st.markdown("---")
 st.header(f"Astronomy Data for {selected_date.strftime('%A, %d %B %Y')}")
 
@@ -213,5 +183,6 @@ planet_df = pd.DataFrame.from_dict(
     orient="index",
     columns=["Rise (IST)", "Set (IST)", "Zenith (IST)"]
 )
+
 with st.expander("🪐 Planetary Times"):
     st.dataframe(planet_df, use_container_width=True)
