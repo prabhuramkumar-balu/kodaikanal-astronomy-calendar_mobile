@@ -1,5 +1,5 @@
 import streamlit as st
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from calendar import monthcalendar, setfirstweekday, MONDAY
 from astral.sun import sun
 from astral.location import LocationInfo
@@ -7,80 +7,94 @@ import pytz
 import ephem
 import pandas as pd
 
-# Setup calendar week to start on Monday
 setfirstweekday(MONDAY)
 IST = pytz.timezone("Asia/Kolkata")
 
-# Location details for Kodaikanal
+# Location for Kodaikanal
 latitude = 10 + 13 / 60 + 50 / 3600
 longitude = 77 + 28 / 60 + 7 / 3600
 timezone = "Asia/Kolkata"
 astral_city = LocationInfo("Kodaikanal", "India", timezone, latitude, longitude)
 
-st.set_page_config(page_title="Kodaikanal Astronomy Calendar", layout="centered")
+# Page config
+st.set_page_config(
+    page_title="Kodaikanal Astronomy Calendar",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 
 st.title("📅 Kodaikanal Astronomy Calendar")
-st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, and Planetary Rise/Set Times (IST, 12-hour format)")
+st.caption("Sunrise, Sunset, Moon Phase, Moonrise/Set, Planet Rise/Set & Zenith Times (IST, 12-hour format)")
 
 # Inputs
-year = st.number_input("Select Year", min_value=1900, max_value=2100, value=date.today().year)
+today = date.today()
+
+year = st.number_input("Select Year", min_value=1900, max_value=2100, value=today.year)
 months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
 ]
-month_index = st.selectbox("Select Month", options=range(12), format_func=lambda i: months[i], index=date.today().month - 1) + 1
+month_index = st.selectbox("Select Month", options=range(12), format_func=lambda i: months[i], index=today.month - 1) + 1
 
-# Generate the month calendar (weeks with days)
 calendar_data = monthcalendar(year, month_index)
 days_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-# Initialize selected day in session state if not present
+# Initialize selected_day in session state
 if "selected_day" not in st.session_state:
-    # Default to today's date if in current month/year, else 1st
-    if (year, month_index) == (date.today().year, date.today().month):
-        st.session_state.selected_day = date.today().day
+    if (year, month_index) == (today.year, today.month):
+        st.session_state.selected_day = today.day
     else:
         st.session_state.selected_day = 1
 
 def select_day(day):
     st.session_state.selected_day = day
 
-# Display calendar grid with buttons, highlight selected (green) and today (red)
 st.write("### Select Day")
 
+# Show days of week header
 cols = st.columns(7)
 for col_idx, d in enumerate(days_of_week):
     cols[col_idx].markdown(f"**{d}**")
 
+# Show calendar grid with clickable colored days
 for week in calendar_data:
     cols = st.columns(7)
     for i, day in enumerate(week):
         if day == 0:
             cols[i].write(" ")
         else:
-            today = date.today()
             is_selected = (day == st.session_state.selected_day)
             is_today = (day == today.day and month_index == today.month and year == today.year)
-            
-            style = ""
-            if is_selected:
-                style = "background-color:#a3d3a2; font-weight: bold; color: black;"  # green bg
-            elif is_today:
-                style = "background-color:#e57373; font-weight: bold; color: white;"   # red bg
 
-            if cols[i].button(f"{day}", key=f"day_{day}", help=f"Select day {day}"):
+            bg_color = ""
+            text_color = "black"
+            if is_selected:
+                bg_color = "#a3d3a2"  # green
+            elif is_today:
+                bg_color = "#e57373"  # red
+                text_color = "white"
+
+            day_html = f"""
+                <div style="
+                    background-color: {bg_color};
+                    color: {text_color};
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    text-align: center;
+                    cursor: pointer;
+                    user-select: none;
+                    font-weight: {'bold' if is_selected or is_today else 'normal'};
+                    ">
+                    {day}
+                </div>
+            """
+
+            # Invisible button for clicking the day
+            if cols[i].button(label="", key=f"select_{day}"):
                 select_day(day)
-            # Add colored background by rendering HTML inside the button label (Streamlit buttons do not support styles directly)
-            # So instead we'll just mark the day text with emojis or formatting here:
-            if is_selected:
-                cols[i].markdown(f"<div style='{style}'>{day}</div>", unsafe_allow_html=True)
-            elif is_today:
-                cols[i].markdown(f"<div style='{style}'>{day}</div>", unsafe_allow_html=True)
+            cols[i].markdown(day_html, unsafe_allow_html=True)
 
-# Selected date
-selected_date = date(year, month_index, st.session_state.selected_day)
-
-# Astronomy calculations
+# Astronomy calculations functions
 
 def to_ist_12h(dt_utc):
     if dt_utc == "N/A" or dt_utc is None:
@@ -100,97 +114,109 @@ def get_rise_set(observer, body):
         set_ = None
     return rise.datetime() if rise else "N/A", set_.datetime() if set_ else "N/A"
 
-def get_zenith(observer, body):
-    # Zenith is highest altitude: closest approach to meridian
-    # Use next_transit for this, which is the time object crosses meridian (culmination)
+def get_zenith_time(observer, body):
     try:
-        transit = observer.next_transit(body)
-        return transit.datetime()
-    except (ephem.AlwaysUpError, ephem.NeverUpError):
+        # next_transit is when the body crosses the local meridian (highest point = zenith)
+        zenith = observer.next_transit(body)
+        return zenith.datetime()
+    except Exception:
         return "N/A"
 
 def describe_moon_phase(illum):
-    if illum < 1:
+    # illum is percentage illumination (0-100)
+    if illum == 0:
         return "New Moon"
-    elif illum < 50:
+    elif 0 < illum < 50:
         return "Waxing Crescent"
     elif illum == 50:
         return "First Quarter"
-    elif illum < 99:
+    elif 50 < illum < 100:
         return "Waxing Gibbous"
-    elif illum >= 99:
+    elif illum == 100:
         return "Full Moon"
-    elif illum > 50:
+    elif 50 < illum < 100:
         return "Waning Gibbous"
     elif illum == 50:
         return "Last Quarter"
-    else:
+    elif 0 < illum < 50:
         return "Waning Crescent"
+    else:
+        return "Unknown"
 
+# Prepare datetime for selected day at noon IST (to avoid date boundary issues)
 try:
-    dt_local = datetime(selected_date.year, selected_date.month, selected_date.day, 12, 0, 0)
-    dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
+    selected_date = date(year, month_index, st.session_state.selected_day)
+except Exception:
+    st.error("Invalid selected date.")
+    st.stop()
 
-    sun_times = sun(astral_city.observer, date=dt_local, tzinfo=pytz.timezone(timezone))
+dt_local = datetime(selected_date.year, selected_date.month, selected_date.day, 12, 0, 0)
+dt_utc = pytz.timezone(timezone).localize(dt_local).astimezone(pytz.utc)
+
+# Sun times using astral
+try:
+    sun_times = sun(astral_city.observer, date=dt_local.date(), tzinfo=pytz.timezone(timezone))
     sunrise_ist = sun_times['sunrise'].strftime('%I:%M %p')
     sunset_ist = sun_times['sunset'].strftime('%I:%M %p')
+    solar_noon_ist = sun_times['noon'].strftime('%I:%M %p')
+except Exception:
+    sunrise_ist = sunset_ist = solar_noon_ist = "N/A"
 
-    observer = ephem.Observer()
-    observer.lat = str(latitude)
-    observer.lon = str(longitude)
-    observer.elevation = 2133
-    observer.date = dt_utc
+# Setup observer for ephem
+observer = ephem.Observer()
+observer.lat = str(latitude)
+observer.lon = str(longitude)
+observer.elevation = 2133
+observer.date = dt_utc
 
-    moon = ephem.Moon(observer)
-    moon_phase = moon.phase
-    moon_phase_desc = describe_moon_phase(moon_phase)
-    moonrise_utc, moonset_utc = get_rise_set(observer, moon)
-    moonrise_ist = to_ist_12h(moonrise_utc)
-    moonset_ist = to_ist_12h(moonset_utc)
-    moon_zenith_ist = to_ist_12h(get_zenith(observer, moon))
+# Moon calculations
+moon = ephem.Moon(observer)
+moon_phase = moon.phase
+moon_phase_desc = describe_moon_phase(moon_phase)
+moonrise_utc, moonset_utc = get_rise_set(observer, moon)
+moonrise_ist = to_ist_12h(moonrise_utc)
+moonset_ist = to_ist_12h(moonset_utc)
+moon_zenith_utc = get_zenith_time(observer, moon)
+moon_zenith_ist = to_ist_12h(moon_zenith_utc)
 
-    sun = ephem.Sun(observer)
-    sun_zenith_ist = to_ist_12h(get_zenith(observer, sun))
+# Planets calculations
+planets = {
+    "Mercury": ephem.Mercury(),
+    "Venus": ephem.Venus(),
+    "Mars": ephem.Mars(),
+    "Jupiter": ephem.Jupiter(),
+    "Saturn": ephem.Saturn(),
+}
 
-    planets = {
-        "Mercury": ephem.Mercury(),
-        "Venus": ephem.Venus(),
-        "Mars": ephem.Mars(),
-        "Jupiter": ephem.Jupiter(),
-        "Saturn": ephem.Saturn(),
-    }
-
-    planet_times = {}
-    for pname, pbody in planets.items():
-        rise_dt, set_dt = get_rise_set(observer, pbody)
-        zenith_dt = get_zenith(observer, pbody)
-        planet_times[pname] = (
-            to_ist_12h(rise_dt),
-            to_ist_12h(set_dt),
-            to_ist_12h(zenith_dt),
-        )
-
-    st.markdown("---")
-    st.header(f"Astronomy Data for {selected_date.strftime('%A, %d %B %Y')}")
-
-    with st.expander("🌅 Sunrise, Sunset & Zenith"):
-        st.write(f"**Sunrise:** {sunrise_ist} IST")
-        st.write(f"**Sunset:** {sunset_ist} IST")
-        st.write(f"**Sun Zenith (Transit):** {sun_zenith_ist} IST")
-
-    with st.expander("🌕 Moon Phase and Moonrise/Moonset/Zenith"):
-        st.write(f"Illumination: **{moon_phase:.1f}%** ({moon_phase_desc})")
-        st.write(f"**Moonrise:** {moonrise_ist} IST")
-        st.write(f"**Moonset:** {moonset_ist} IST")
-        st.write(f"**Moon Zenith (Transit):** {moon_zenith_ist} IST")
-
-    planet_df = pd.DataFrame.from_dict(
-        planet_times,
-        orient='index',
-        columns=["Rise (IST)", "Set (IST)", "Zenith (IST)"]
+planet_times = {}
+for pname, pbody in planets.items():
+    rise_dt, set_dt = get_rise_set(observer, pbody)
+    zenith_dt = get_zenith_time(observer, pbody)
+    planet_times[pname] = (
+        to_ist_12h(rise_dt),
+        to_ist_12h(set_dt),
+        to_ist_12h(zenith_dt)
     )
-    with st.expander("🪐 Planet Rise/Set/Zenith Times"):
-        st.dataframe(planet_df, use_container_width=True)
 
-except Exception as e:
-    st.error(f"Error retrieving data: {e}")
+# Display astronomy data
+st.markdown("---")
+st.header(f"Astronomy Data for {selected_date.strftime('%A, %d %B %Y')}")
+
+with st.expander("🌅 Sun"):
+    st.write(f"**Sunrise:** {sunrise_ist} IST")
+    st.write(f"**Sunset:** {sunset_ist} IST")
+    st.write(f"**Solar Noon (Zenith):** {solar_noon_ist} IST")
+
+with st.expander("🌕 Moon"):
+    st.write(f"Illumination: **{moon_phase:.1f}%** ({moon_phase_desc})")
+    st.write(f"**Moonrise:** {moonrise_ist} IST")
+    st.write(f"**Moonset:** {moonset_ist} IST")
+    st.write(f"**Moon Zenith (Transit):** {moon_zenith_ist} IST")
+
+planet_df = pd.DataFrame.from_dict(
+    planet_times,
+    orient='index',
+    columns=["Rise (IST)", "Set (IST)", "Zenith (IST)"]
+)
+with st.expander("🪐 Planet Rise/Set/Zenith Times"):
+    st.dataframe(planet_df, use_container_width=True)
